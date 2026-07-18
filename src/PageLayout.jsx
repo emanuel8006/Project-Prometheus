@@ -6,7 +6,11 @@ const modules = [
   { path: '/module/1', name: 'Key Metrics', short: '1', questions: 5, prefix: 'metric' },
   { path: '/module/2', name: 'Psychology', short: '2', questions: 5, prefix: 'psych' },
   { path: '/module/3', name: 'Mistakes', short: '3', questions: 5, prefix: 'mistake' },
+  { path: '/module/4', name: 'Foundations', short: '4', questions: 5, prefix: 'foundation' },
   { path: '/simulation', name: 'Simulation', short: '🎮', questions: 0, prefix: null },
+  { path: '/goal-planner', name: 'Goal Planner', short: '🎯', questions: 0, prefix: null },
+  { path: '/debt-payoff', name: 'Debt Payoff', short: '💳', questions: 0, prefix: null },
+  { path: '/monte-carlo', name: 'Monte Carlo', short: '🎲', questions: 0, prefix: null },
   { path: '/conclusion', name: 'Conclusion', short: '✓', questions: 0, prefix: null },
 ];
 
@@ -64,27 +68,18 @@ export const TopNav = ({ soundEnabled, setSoundEnabled, totalCorrect, totalAnswe
     return getModuleProgress(prefix, total) >= total;
   };
 
-  // Check if a module is unlocked (previous module is complete)
+  // Check if a module is unlocked. Home and Module 1 are always open; every
+  // module after that cascades off the one directly before it in the array,
+  // so inserting/reordering modules here doesn't require touching this logic.
   const isModuleUnlocked = (index) => {
     if (index === 0) return true; // Home always unlocked
     if (index === 1) return true; // Module 1 always unlocked
-    
-    // For modules 2-3, check if previous module is complete
+
     const prevModule = modules[index - 1];
     if (prevModule && prevModule.prefix) {
       return isModuleComplete(prevModule.prefix, prevModule.questions);
     }
-    
-    // Simulation requires Module 3 complete
-    if (index === 4) {
-      return isModuleComplete('mistake', 5);
-    }
-    
-    // Conclusion is always accessible if simulation is
-    if (index === 5) {
-      return isModuleComplete('mistake', 5);
-    }
-    
+
     return true;
   };
 

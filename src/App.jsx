@@ -2,14 +2,18 @@ import { useState, useEffect } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { Storage } from './utils';
-import { metrics, psychologyTopics, beginnerMistakes } from './educationalData';
+import { metrics, psychologyTopics, beginnerMistakes, foundationsTopics } from './educationalData';
 import { TopNav } from './PageLayout';
 
 import Home from './pages/Home';
 import Module1 from './pages/Module1';
 import Module2 from './pages/Module2';
 import Module3 from './pages/Module3';
+import Module4 from './pages/Module4';
 import Simulation from './pages/Simulation';
+import GoalPlanner from './pages/GoalPlanner';
+import DebtPayoff from './pages/DebtPayoff';
+import MonteCarlo from './pages/MonteCarlo';
 import Conclusion from './pages/Conclusion';
 import SignInModal from './pages/SignInModal';
 import SignUpModal from './pages/SignUpModal';
@@ -31,7 +35,7 @@ function App() {
   const [totalCorrect, setTotalCorrect] = useState(() => Storage.load('totalCorrect', 0));
   const [totalAnswered, setTotalAnswered] = useState(() => Storage.load('totalAnswered', 0));
 
-  const totalQuizzes = metrics.length + psychologyTopics.length + beginnerMistakes.length;
+  const totalQuizzes = metrics.length + psychologyTopics.length + beginnerMistakes.length + foundationsTopics.length;
 
   useEffect(() => {
     Storage.save('quizScores', quizScores);
@@ -150,7 +154,17 @@ function App() {
             quizScores={quizScores}
           />
         } />
+        <Route path="/module/4" element={
+          <Module4
+            onQuizComplete={handleQuizComplete}
+            soundEnabled={soundEnabled}
+            quizScores={quizScores}
+          />
+        } />
         <Route path="/simulation" element={<Simulation session={session} />} />
+        <Route path="/goal-planner" element={<GoalPlanner />} />
+        <Route path="/debt-payoff" element={<DebtPayoff />} />
+        <Route path="/monte-carlo" element={<MonteCarlo />} />
         <Route path="/conclusion" element={
           <Conclusion 
             totalCorrect={totalCorrect}

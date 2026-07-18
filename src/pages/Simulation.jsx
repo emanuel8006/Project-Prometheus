@@ -26,10 +26,10 @@ function Simulation({ session }) {
 
         <div className="max-w-4xl mx-auto">
           <PageNavigation 
-            prevPath="/module/3" 
-            prevLabel="Common Mistakes"
-            nextPath="/conclusion" 
-            nextLabel="See Conclusion"
+            prevPath="/module/4" 
+            prevLabel="Foundations"
+            nextPath="/goal-planner" 
+            nextLabel="Goal Planner"
           />
         </div>
       </div>

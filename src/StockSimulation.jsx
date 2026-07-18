@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { API_BASE_URL, SIMULATION_CONFIG, CATEGORIES, SP500_DATA, FUN_PURCHASES } from './config';
 import { STOCKS_DATA, SECTOR_NAMES } from './stockData';
-import { PortfolioChart } from './components';
+import { PortfolioChart, ScenarioComparisonChart } from './components';
 import { getUserData, updatePortfolioFromSimulation } from './supabaseFunctions';
 
 function formatMarketCap(value) {
@@ -27,6 +27,11 @@ const StockSimulation = ({ session }) => {
       stocksPerCategory: 2,
       investmentStrategy: 'lump',
       dcaMonthly: 500,
+      panicSellDate: '',
+      rebalanceFrequency: 'none',
+      useCustomDates: false,
+      customStartDate: '',
+      customEndDate: '',
     };
   });
   const [selectedCategories, setSelectedCategories] = useState(() => {
@@ -88,6 +93,59 @@ const StockSimulation = ({ session }) => {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [showAiModal, setShowAiModal] = useState(false);
+
+  // AI crash walkthrough (only relevant when a panic-sell scenario is picked)
+  const [crashAnalysis, setCrashAnalysis] = useState(null);
+  const [crashLoading, setCrashLoading] = useState(false);
+  const [crashError, setCrashError] = useState(null);
+  const [showCrashModal, setShowCrashModal] = useState(false);
+
+  // Saved scenarios for side-by-side comparison
+  const [savedScenarios, setSavedScenarios] = useState(() => {
+    const saved = localStorage.getItem('sim_scenarios');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [scenarioLabel, setScenarioLabel] = useState('');
+
+  useEffect(() => {
+    localStorage.setItem('sim_scenarios', JSON.stringify(savedScenarios));
+  }, [savedScenarios]);
+
+  const SCENARIO_COLORS = ['#3D8B8B', '#E8A54B', '#D9534F', '#6B5CA5'];
+  const MAX_SCENARIOS = 4;
+
+  const defaultScenarioLabel = () => {
+    const tickerList = Object.values(selectedStocks).flat().map(s => s.ticker).join('+');
+    const period = config.useCustomDates ? config.customStartDate : config.year;
+    const strategy = config.investmentStrategy === 'dca' ? 'DCA' : 'Lump';
+    return `${tickerList} · ${period} · ${strategy}`;
+  };
+
+  const handleSaveScenario = () => {
+    if (!simulationResult || savedScenarios.length >= MAX_SCENARIOS) return;
+    const label = scenarioLabel.trim() || defaultScenarioLabel();
+    const newScenario = {
+      id: Date.now(),
+      label,
+      invested: simulationResult.total_contributed ?? simulationResult.starting_cash,
+      finalValue: simulationResult.final_cash,
+      roiPercent: simulationResult.roi_percent,
+      sharpe: simulationResult.risk_metrics?.sharpe_ratio ?? null,
+      maxDrawdown: simulationResult.risk_metrics?.max_drawdown_pct ?? null,
+      points: simulationResult.value_history || [],
+    };
+    setSavedScenarios(prev => [...prev, newScenario]);
+    setScenarioLabel('');
+  };
+
+  const handleRemoveScenario = (id) => {
+    setSavedScenarios(prev => prev.filter(s => s.id !== id));
+  };
+
+  const handleClearScenarios = () => {
+    setSavedScenarios([]);
+    localStorage.removeItem('sim_scenarios');
+  };
 
   const getAvailableStocks = () => STOCKS_DATA[selectedCategories[currentCategoryIndex]] || [];
 
@@ -188,27 +246,38 @@ const StockSimulation = ({ session }) => {
       setSimulationResult(null);
       try {
         const allTickers = Object.values(selectedStocks).flat().map(s => s.ticker);
+        const isDca = config.investmentStrategy === 'dca';
+
         const res = await fetch(`${API_BASE_URL}/simulate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            starting_cash: config.investment,
+            // Pure DCA runs have no lump sum; a tiny nonzero value keeps the
+            // backend's per-ticker cash split well-defined.
+            starting_cash: isDca ? 0.01 : config.investment,
             start_year: config.year,
             end_year: new Date().getFullYear(),
+            start_date: config.useCustomDates ? config.customStartDate : null,
+            end_date: config.useCustomDates ? config.customEndDate : null,
             tickers: allTickers,
+            contribution_amount: isDca ? config.dcaMonthly : 0,
+            contribution_frequency: isDca ? 'monthly' : 'none',
+            panic_sell_date: config.panicSellDate || null,
+            rebalance_frequency: config.rebalanceFrequency || 'none',
           }),
         });
         const data = await res.json();
         setSimulationResult(data);
 
         // When signed in, save simulation to DB so leaderboard shows user's amount, year, balance, profit, ROI
-        if (session?.user?.email && data?.starting_cash != null && data?.final_cash != null) {
+        if (session?.user?.email && data?.final_cash != null) {
           try {
             const userData = await getUserData(session.user.email);
             const portfolioId = userData?.portfolios?.[0]?.id;
+            const startingBalance = isDca ? (data.total_contributed ?? 0) : data.starting_cash;
             if (portfolioId) {
               await updatePortfolioFromSimulation(portfolioId, {
-                starting_balance: data.starting_cash,
+                starting_balance: startingBalance,
                 current_balance: data.final_cash,
                 investment_year: config.year,
               });
@@ -240,6 +309,11 @@ const StockSimulation = ({ session }) => {
       stocksPerCategory: 2,
       investmentStrategy: 'lump',
       dcaMonthly: 500,
+      panicSellDate: '',
+      rebalanceFrequency: 'none',
+      useCustomDates: false,
+      customStartDate: '',
+      customEndDate: '',
     });
     setSimulationResult(null);
     // Clear localStorage
@@ -254,59 +328,43 @@ const StockSimulation = ({ session }) => {
   const getResults = () => {
     if (!simulationResult) return null;
 
-    const yearsHeld = new Date().getFullYear() - config.year + (new Date().getMonth() / 12);
-    const monthsHeld = Math.floor(yearsHeld * 12);
+    // Prefer the exact dates the backend actually used (accurate for custom
+    // date ranges); fall back to the old year-based approximation for older
+    // cached results that don't have start_date/end_date.
+    const yearsHeld = simulationResult.start_date && simulationResult.end_date
+      ? Math.max((new Date(simulationResult.end_date) - new Date(simulationResult.start_date)) / (1000 * 60 * 60 * 24 * 365.25), 0.01)
+      : new Date().getFullYear() - config.year + (new Date().getMonth() / 12);
+    const monthsHeld = Math.max(1, Math.floor(yearsHeld * 12));
     const allStocks = Object.values(selectedStocks).flat();
+    const isDca = config.investmentStrategy === 'dca';
 
-    let totalInvested, totalValue, stockResults;
+    // Both lump-sum and DCA results now come straight from the backend, which
+    // walks real daily price history and buys shares on the actual trading
+    // day of each contribution period -- no more linear-interpolation guess.
+    const totalInvested = isDca
+      ? (simulationResult.total_contributed ?? 0)
+      : simulationResult.starting_cash;
+    const totalValue = simulationResult.final_cash;
 
-    if (config.investmentStrategy === 'lump') {
-      totalInvested = simulationResult.starting_cash;
-      totalValue = simulationResult.final_cash;
-      stockResults = allStocks.map(stock => {
-        const b = simulationResult.ticker_breakdown?.[stock.ticker];
-        if (!b || b.error) {
-          return { ...stock, invested: totalInvested / allStocks.length, shares: 0, currentValue: 0, gain: 0, gainPercent: 0 };
-        }
-        return {
-          ...stock,
-          invested: b.initial_investment,
-          shares: b.final_shares,
-          currentValue: b.final_value,
-          gain: b.final_value - b.initial_investment,
-          gainPercent: b.roi * 100,
-        };
-      });
-    } else {
-      // DCA: compute locally using buy_price + sell_price from simulate response
-      const numStocks = allStocks.length;
-      const monthlyPerStock = config.dcaMonthly / numStocks;
-      stockResults = allStocks.map(stock => {
-        const b = simulationResult.ticker_breakdown?.[stock.ticker];
-        const priceNow = b?.sell_price ?? 0;
-        const startPrice = b?.buy_price ?? 0;
-        let shares = 0, invested = 0;
-        for (let month = 0; month < monthsHeld; month++) {
-          const progress = month / monthsHeld;
-          const priceAtMonth = startPrice + (priceNow - startPrice) * progress * 0.7;
-          if (priceAtMonth > 0) shares += monthlyPerStock / priceAtMonth;
-          invested += monthlyPerStock;
-        }
-        const currentValue = shares * priceNow;
-        return {
-          ...stock,
-          invested,
-          shares,
-          currentValue,
-          gain: currentValue - invested,
-          gainPercent: invested > 0 ? ((currentValue - invested) / invested) * 100 : 0,
-        };
-      });
-      totalInvested = stockResults.reduce((s, r) => s + r.invested, 0);
-      totalValue = stockResults.reduce((s, r) => s + r.currentValue, 0);
-    }
+    const stockResults = allStocks.map(stock => {
+      const b = simulationResult.ticker_breakdown?.[stock.ticker];
+      if (!b || b.error) {
+        return { ...stock, invested: totalInvested / allStocks.length, shares: 0, currentValue: 0, gain: 0, gainPercent: 0 };
+      }
+      const invested = isDca
+        ? (b.total_contributed || 0)
+        : b.initial_investment;
+      return {
+        ...stock,
+        invested,
+        shares: b.final_shares,
+        currentValue: b.final_value,
+        gain: b.final_value - invested,
+        gainPercent: invested > 0 ? ((b.final_value - invested) / invested) * 100 : 0,
+      };
+    });
 
-    const bankValue = config.investmentStrategy === 'lump'
+    const bankValue = !isDca
       ? config.investment * Math.pow(1 + SIMULATION_CONFIG.bankInterestRate, yearsHeld)
       : (() => {
           let bankTotal = 0;
@@ -315,16 +373,23 @@ const StockSimulation = ({ session }) => {
           return bankTotal;
         })();
 
-    const sp500Data = SP500_DATA[config.year];
-    const sp500Return = sp500Data ? (sp500Data.now - sp500Data.start) / sp500Data.start : 0;
-    const sp500Value = config.investmentStrategy === 'lump'
-      ? config.investment * (1 + sp500Return)
-      : (() => {
-          let sp500Total = 0;
-          const monthlyReturn = Math.pow(1 + sp500Return, 1 / monthsHeld) - 1;
-          for (let m = 0; m < monthsHeld; m++) sp500Total = (sp500Total + config.dcaMonthly) * (1 + monthlyReturn);
-          return sp500Total;
-        })();
+    const realBenchmark = simulationResult.benchmark && !simulationResult.benchmark.error
+      ? simulationResult.benchmark
+      : null;
+
+    const sp500Value = realBenchmark
+      ? realBenchmark.final_value
+      : !isDca
+        ? config.investment * (1 + sp500Return)
+        : (() => {
+            let sp500Total = 0;
+            const monthlyReturn = Math.pow(1 + sp500Return, 1 / monthsHeld) - 1;
+            for (let m = 0; m < monthsHeld; m++) sp500Total = (sp500Total + config.dcaMonthly) * (1 + monthlyReturn);
+            return sp500Total;
+          })();
+
+    const panicSell = simulationResult.panic_sell || null;
+    const rebalanceCount = simulationResult.rebalance_events?.length || 0;
 
     return {
       stockResults,
@@ -335,6 +400,8 @@ const StockSimulation = ({ session }) => {
       comparisons: { mattress: totalInvested, bank: bankValue, sp500: sp500Value },
       yearsHeld: yearsHeld.toFixed(1),
       strategy: config.investmentStrategy,
+      panicSell,
+      rebalanceCount,
     };
   };
 
@@ -347,7 +414,6 @@ const StockSimulation = ({ session }) => {
     setAiError(null);
     setAiAnalysis(null);
 
-    const allStocks = Object.values(selectedStocks).flat();
     const stockLines = results.stockResults.map(s =>
       `- ${s.ticker} (${s.name}): invested $${s.invested.toLocaleString(undefined, { maximumFractionDigits: 0 })}, now worth $${s.currentValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}, ${s.gainPercent >= 0 ? '+' : ''}${s.gainPercent.toFixed(1)}%`
     ).join('\n');
@@ -365,6 +431,7 @@ Comparisons:
 - Mattress (no investment): $${results.comparisons.mattress.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 - Savings account: $${results.comparisons.bank.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 - S&P 500 index: $${results.comparisons.sp500.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+${simulationResult.correlation_matrix ? `\nDiversification note: the correlation between the picked stocks' daily returns ranges from ${Math.min(...simulationResult.correlation_matrix.matrix.flat().filter(v => v < 0.999)).toFixed(2)} to ${Math.max(...simulationResult.correlation_matrix.matrix.flat().filter(v => v < 0.999)).toFixed(2)} (1.0 = always move together, -1.0 = always move opposite).` : ''}
 
 Please provide a concise, beginner-friendly analysis with:
 1. 3-4 pros of this portfolio/strategy based on the results
@@ -386,6 +453,64 @@ Keep it encouraging, clear, and under 300 words. Use simple language, no jargon.
       setAiError(err.message);
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const handleCrashWalkthrough = async () => {
+    const panicSell = simulationResult?.panic_sell;
+    if (!panicSell) return;
+
+    setShowCrashModal(true);
+    setCrashLoading(true);
+    setCrashError(null);
+    setCrashAnalysis(null);
+
+    // Pull real value_history points from a window around the sale date so
+    // Gemini narrates from actual numbers, not general knowledge.
+    const saleDate = new Date(panicSell.actual_sale_date);
+    const fullHistory = simulationResult.value_history || [];
+    const windowMonths = 6;
+    const nearby = fullHistory.filter(pt => {
+      const d = new Date(pt.date);
+      const monthsDiff = (d.getFullYear() - saleDate.getFullYear()) * 12 + (d.getMonth() - saleDate.getMonth());
+      return Math.abs(monthsDiff) <= windowMonths;
+    });
+
+    const historyLines = nearby.map(pt => `- ${pt.date}: $${pt.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`).join('\n');
+    const heldFinal = simulationResult.final_cash;
+    const panicFinal = panicSell.final_value;
+
+    const prompt = `You are a financial educator walking a beginner through a real historical market downturn using their own simulated portfolio's actual monthly values.
+
+The user's portfolio (tickers: ${simulationResult.tickers.join(', ')}) was sold entirely on ${panicSell.actual_sale_date}, converting to cash at $${panicSell.value_at_sale.toLocaleString(undefined, { maximumFractionDigits: 0 })}.
+
+Real month-by-month portfolio value around that date:
+${historyLines}
+
+If they had held instead of selling, the portfolio ended at $${heldFinal.toLocaleString(undefined, { maximumFractionDigits: 0 })} by ${simulationResult.end_year}.
+If they sold on ${panicSell.actual_sale_date} and stayed in cash, they ended at $${panicFinal.toLocaleString(undefined, { maximumFractionDigits: 0 })}.
+
+Narrate this like a financial advisor walking someone through what actually happened, using the real numbers above:
+1. Describe the emotional moment of the drop that led to the sale (2-3 sentences, grounded in the real numbers, not generic "the market crashed" language)
+2. Walk through what happened to the portfolio in the months after, using the actual values given
+3. State the concrete cost or benefit of the decision in dollars
+4. End with one grounded lesson about behavior during downturns (not a cliché, something specific to this data)
+
+Keep it under 280 words, plain language, no jargon, and stay strictly grounded in the numbers given -- don't invent news events or details not present in the data.`;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/gemini`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instructions: prompt }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setCrashAnalysis(data.output);
+    } catch (err) {
+      setCrashError(err.message);
+    } finally {
+      setCrashLoading(false);
     }
   };
 
@@ -457,20 +582,75 @@ Keep it encouraging, clear, and under 300 words. Use simple language, no jargon.
 
           <div className="space-y-6">
             <div>
-              <label className="block text-navy font-medium mb-2">Starting Year</label>
-              <p className="text-navy-light text-sm mb-3">Pick a year. You'll see stock data from that time and choose what to "invest" in.</p>
-              <select
-                value={config.year}
-                onChange={(e) => setConfig({ ...config, year: parseInt(e.target.value) })}
-                className="w-full p-3 rounded-lg border-2 border-cream-dark bg-white text-navy font-medium focus:border-teal focus:outline-none cursor-pointer"
-              >
-                {SIMULATION_CONFIG.availableYears.map(year => (
-                  <option key={year} value={year}>{year}</option>
-                ))}
-              </select>
-              <p className="text-navy-light text-xs mt-2">
-                Try 2020 for pandemic crash, 2022 for tech downturn, or 2023 for AI boom.
-              </p>
+              <label className="block text-navy font-medium mb-2">Time Period</label>
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={() => setConfig({ ...config, useCustomDates: false })}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    !config.useCustomDates ? 'bg-teal text-white' : 'bg-cream-dark text-navy hover:bg-teal/20'
+                  }`}
+                >
+                  By Year
+                </button>
+                <button
+                  onClick={() => setConfig({ ...config, useCustomDates: true })}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    config.useCustomDates ? 'bg-teal text-white' : 'bg-cream-dark text-navy hover:bg-teal/20'
+                  }`}
+                >
+                  Exact Dates
+                </button>
+              </div>
+
+              {!config.useCustomDates ? (
+                <>
+                  <p className="text-navy-light text-sm mb-3">Pick a year. You'll see stock data from that time and choose what to "invest" in.</p>
+                  <select
+                    value={config.year}
+                    onChange={(e) => setConfig({ ...config, year: parseInt(e.target.value) })}
+                    className="w-full p-3 rounded-lg border-2 border-cream-dark bg-white text-navy font-medium focus:border-teal focus:outline-none cursor-pointer"
+                  >
+                    {SIMULATION_CONFIG.availableYears.map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                  <p className="text-navy-light text-xs mt-2">
+                    Try 2020 for pandemic crash, 2022 for tech downturn, or 2023 for AI boom.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-navy-light text-sm mb-3">
+                    Pick exact start and end dates — e.g. the week before COVID hit, instead of just "2020."
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-navy-light text-xs mb-1">Start date</label>
+                      <input
+                        type="date"
+                        value={config.customStartDate}
+                        onChange={(e) => setConfig({ ...config, customStartDate: e.target.value })}
+                        max={config.customEndDate || undefined}
+                        className="w-full p-3 rounded-lg border-2 border-cream-dark bg-white text-navy font-medium focus:border-teal focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-navy-light text-xs mb-1">End date</label>
+                      <input
+                        type="date"
+                        value={config.customEndDate}
+                        onChange={(e) => setConfig({ ...config, customEndDate: e.target.value })}
+                        min={config.customStartDate || undefined}
+                        max={new Date().toISOString().split('T')[0]}
+                        className="w-full p-3 rounded-lg border-2 border-cream-dark bg-white text-navy font-medium focus:border-teal focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-navy-light text-xs mt-2">
+                    Try 2020-02-19 to 2020-03-23 to simulate exactly the COVID crash.
+                  </p>
+                </>
+              )}
             </div>
 
             <div>
@@ -575,6 +755,59 @@ Keep it encouraging, clear, and under 300 words. Use simple language, no jargon.
               )}
             </div>
 
+            <div>
+              <label className="block text-navy font-medium mb-2">Simulate Panic-Selling? (optional)</label>
+              <p className="text-navy-light text-sm mb-3">
+                Pick a real crash. We'll show you what selling everything that day — and sitting in cash — would've cost you, versus holding.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: 'None', value: '' },
+                  { label: '2008 Financial Crisis', value: '2008-10-01' },
+                  { label: '2020 COVID Crash', value: '2020-03-23' },
+                  { label: '2022 Selloff', value: '2022-06-16' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setConfig({ ...config, panicSellDate: opt.value })}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      config.panicSellDate === opt.value
+                        ? 'bg-coral text-white'
+                        : 'bg-cream-dark text-navy hover:bg-coral/20'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-navy font-medium mb-2">Rebalancing (optional)</label>
+              <p className="text-navy-light text-sm mb-3">
+                If you pick multiple stocks, periodically sell winners and buy laggards back to equal weight.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: 'Never', value: 'none' },
+                  { label: 'Yearly', value: 'yearly' },
+                  { label: 'Quarterly', value: 'quarterly' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setConfig({ ...config, rebalanceFrequency: opt.value })}
+                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                      config.rebalanceFrequency === opt.value
+                        ? 'bg-teal text-white'
+                        : 'bg-cream-dark text-navy hover:bg-teal/20'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-navy font-medium mb-2">Categories to Pick</label>
@@ -604,14 +837,20 @@ Keep it encouraging, clear, and under 300 words. Use simple language, no jargon.
 
             <button
               onClick={handleConfigSubmit}
-              disabled={config.investment < 50}
+              disabled={config.investment < 50 || (config.useCustomDates && (!config.customStartDate || !config.customEndDate || config.customStartDate >= config.customEndDate))}
               className={`w-full py-3 rounded-xl font-semibold transition-colors ${
-                config.investment >= 50
+                config.investment >= 50 && !(config.useCustomDates && (!config.customStartDate || !config.customEndDate || config.customStartDate >= config.customEndDate))
                   ? 'bg-teal text-white hover:bg-teal-light'
                   : 'bg-cream-dark text-navy-light cursor-not-allowed'
               }`}
             >
-              {config.investment < 50 ? 'Minimum investment is $50' : 'Continue'}
+              {config.investment < 50
+                ? 'Minimum investment is $50'
+                : (config.useCustomDates && (!config.customStartDate || !config.customEndDate))
+                  ? 'Pick a start and end date'
+                  : (config.useCustomDates && config.customStartDate >= config.customEndDate)
+                    ? 'Start date must be before end date'
+                    : 'Continue'}
             </button>
           </div>
         </div>
@@ -684,7 +923,7 @@ Keep it encouraging, clear, and under 300 words. Use simple language, no jargon.
                 {category?.icon} {SECTOR_NAMES[categoryId] || category?.name}
               </h3>
               <p className="text-navy-light">
-                Select {config.stocksPerCategory} stocks • Data from January {config.year}
+                Select {config.stocksPerCategory} stocks • Data from {config.useCustomDates ? config.customStartDate : `January ${config.year}`}
               </p>
             </div>
             <div className="text-right">
@@ -941,8 +1180,8 @@ Keep it encouraging, clear, and under 300 words. Use simple language, no jargon.
         <div className={`rounded-2xl p-8 text-center ${isProfit ? 'bg-sage/20' : 'bg-coral/20'}`}>
           <p className="text-navy-light mb-2">
             {results.strategy === 'dca' 
-              ? `Your $${config.dcaMonthly}/month since ${config.year} ($${results.totalInvested.toLocaleString(undefined, { maximumFractionDigits: 0 })} total) would now be worth`
-              : `Your $${results.totalInvested.toLocaleString()} invested in ${config.year} would now be worth`
+              ? `Your $${config.dcaMonthly}/month since ${config.useCustomDates ? simulationResult.start_date : config.year} ($${results.totalInvested.toLocaleString(undefined, { maximumFractionDigits: 0 })} total) would now be worth`
+              : `Your $${results.totalInvested.toLocaleString()} invested ${config.useCustomDates ? `on ${simulationResult.start_date}` : `in ${config.year}`} would now be worth`
             }
           </p>
           <p className="font-display text-5xl md:text-6xl font-bold text-navy mb-2">
@@ -951,7 +1190,54 @@ Keep it encouraging, clear, and under 300 words. Use simple language, no jargon.
           <p className={`text-xl font-semibold ${isProfit ? 'text-sage' : 'text-coral'}`}>
             {isProfit ? '+' : ''}{results.totalGainPercent.toFixed(1)}% ({isProfit ? '+' : ''}${results.totalGain.toLocaleString(undefined, { maximumFractionDigits: 0 })})
           </p>
+          {results.rebalanceCount > 0 && (
+            <p className="text-navy-light text-sm mt-2">
+              Rebalanced back to equal weight {results.rebalanceCount} time{results.rebalanceCount !== 1 ? 's' : ''} along the way.
+            </p>
+          )}
         </div>
+
+        {/* Panic Sell Comparison */}
+        {results.panicSell && (
+          <div className="rounded-2xl p-8 bg-coral/10 border-2 border-coral">
+            <h4 className="font-display text-xl font-bold text-navy mb-1">😱 What If You'd Panic-Sold?</h4>
+            <p className="text-navy-light text-sm mb-6">
+              If you'd sold everything on {results.panicSell.actual_sale_date} and sat in cash instead of holding...
+            </p>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="p-4 bg-white rounded-xl">
+                <p className="text-navy-light text-sm mb-1">You held on</p>
+                <p className="font-display text-3xl font-bold text-sage">
+                  ${results.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+              <div className="p-4 bg-white rounded-xl">
+                <p className="text-navy-light text-sm mb-1">You panic-sold</p>
+                <p className="font-display text-3xl font-bold text-coral">
+                  ${results.panicSell.final_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+            </div>
+            <p className="text-navy font-semibold mt-4 text-center">
+              Panic-selling would have cost you{' '}
+              ${Math.max(results.totalValue - results.panicSell.final_value, 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              {results.totalValue < results.panicSell.final_value && ' (in this case, selling actually would have done better — markets don\'t always recover on schedule)'}
+            </p>
+            <div className="text-center mt-6">
+              <button
+                onClick={handleCrashWalkthrough}
+                disabled={crashLoading}
+                className={`px-6 py-2 rounded-xl font-semibold transition-colors ${
+                  crashLoading
+                    ? 'bg-cream-dark text-navy-light cursor-not-allowed'
+                    : 'bg-coral text-white hover:bg-coral/90'
+                }`}
+              >
+                {crashLoading ? 'Walking through it...' : '🕰️ Walk Me Through The Crash'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Portfolio Growth Chart */}
         <PortfolioChart
@@ -960,6 +1246,9 @@ Keep it encouraging, clear, and under 300 words. Use simple language, no jargon.
           startValue={results.strategy === 'dca' ? 0 : results.totalInvested}
           endValue={results.totalValue}
           comparisons={results.comparisons}
+          valueHistory={simulationResult.value_history}
+          benchmarkHistory={simulationResult.benchmark?.value_history}
+          panicHistory={results.panicSell?.value_history}
         />
 
         {/* Stock Breakdown */}
@@ -1042,6 +1331,182 @@ Keep it encouraging, clear, and under 300 words. Use simple language, no jargon.
           </div>
         </div>
 
+        {/* Diversification Check: Correlation Matrix */}
+        {simulationResult.correlation_matrix && (
+          <div className="bg-white rounded-2xl p-8 shadow-lg">
+            <h4 className="font-display text-xl font-bold text-navy mb-1">🧩 Diversification Check</h4>
+            <p className="text-navy-light text-sm mb-6">
+              How much your picks actually move together, based on real daily price data. Closer to +1 means they rise and fall together — less true diversification than it might look.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="border-collapse mx-auto">
+                <thead>
+                  <tr>
+                    <th className="p-2"></th>
+                    {simulationResult.correlation_matrix.tickers.map(t => (
+                      <th key={t} className="p-2 text-sm font-semibold text-navy">{t}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {simulationResult.correlation_matrix.matrix.map((row, i) => (
+                    <tr key={i}>
+                      <td className="p-2 text-sm font-semibold text-navy text-right pr-3">
+                        {simulationResult.correlation_matrix.tickers[i]}
+                      </td>
+                      {row.map((value, j) => {
+                        const intensity = Math.abs(value);
+                        const isDiagonal = i === j;
+                        const bg = isDiagonal
+                          ? '#3D8B8B'
+                          : value >= 0
+                            ? `rgba(217, 83, 79, ${0.15 + intensity * 0.6})`
+                            : `rgba(61, 139, 139, ${0.15 + intensity * 0.6})`;
+                        return (
+                          <td
+                            key={j}
+                            className={`p-2 text-sm text-center rounded ${isDiagonal ? 'text-white font-semibold' : 'text-navy'}`}
+                            style={{ backgroundColor: bg }}
+                          >
+                            {value.toFixed(2)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-navy-light text-xs mt-4 text-center">
+              Red = tend to move together (less diversified) · Blue = move independently or opposite (more diversified)
+            </p>
+          </div>
+        )}
+
+        {/* Risk & Performance Metrics */}
+        {simulationResult.risk_metrics && (
+          <div className="bg-white rounded-2xl p-8 shadow-lg">
+            <h4 className="font-display text-xl font-bold text-navy mb-1">📊 Risk & Performance Metrics</h4>
+            <p className="text-navy-light text-sm mb-6">
+              Computed from real monthly portfolio values — the same math real financial tools use.
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: 'Annualized Return', value: `${simulationResult.risk_metrics.annualized_return_pct >= 0 ? '+' : ''}${simulationResult.risk_metrics.annualized_return_pct}%`, bench: simulationResult.benchmark?.risk_metrics?.annualized_return_pct },
+                { label: 'Volatility', value: `${simulationResult.risk_metrics.annualized_volatility_pct}%`, bench: simulationResult.benchmark?.risk_metrics?.annualized_volatility_pct },
+                { label: 'Sharpe Ratio', value: simulationResult.risk_metrics.sharpe_ratio ?? 'N/A', bench: simulationResult.benchmark?.risk_metrics?.sharpe_ratio },
+                { label: 'Max Drawdown', value: `${simulationResult.risk_metrics.max_drawdown_pct}%`, bench: simulationResult.benchmark?.risk_metrics?.max_drawdown_pct },
+              ].map((metric, i) => (
+                <div key={i} className="p-4 bg-cream rounded-lg text-center">
+                  <p className="text-navy-light text-xs mb-1">{metric.label}</p>
+                  <p className="font-display text-xl font-bold text-navy">{metric.value}</p>
+                  {metric.bench != null && (
+                    <p className="text-navy-light text-xs mt-1">S&P 500: {metric.bench}{metric.label === 'Sharpe Ratio' ? '' : '%'}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p className="text-navy-light text-xs mt-4">
+              Sharpe ratio measures return per unit of risk (higher is better). Max drawdown is the largest peak-to-trough drop your portfolio experienced.
+            </p>
+          </div>
+        )}
+
+        {/* Save & Compare Scenarios */}
+        <div className="bg-white rounded-2xl p-8 shadow-lg">
+          <h4 className="font-display text-xl font-bold text-navy mb-1">⚖️ Save & Compare Scenarios</h4>
+          <p className="text-navy-light text-sm mb-6">
+            Save this run, then try different picks or a different period, and compare them side by side.
+          </p>
+
+          {savedScenarios.length < MAX_SCENARIOS ? (
+            <div className="flex flex-col sm:flex-row gap-2 mb-6">
+              <input
+                type="text"
+                value={scenarioLabel}
+                onChange={(e) => setScenarioLabel(e.target.value)}
+                placeholder={defaultScenarioLabel()}
+                className="flex-1 p-3 rounded-lg border-2 border-cream-dark bg-white text-navy focus:border-teal focus:outline-none"
+              />
+              <button
+                onClick={handleSaveScenario}
+                className="px-6 py-3 bg-teal text-white rounded-xl font-semibold hover:bg-teal-light transition-colors whitespace-nowrap"
+              >
+                💾 Save This Scenario
+              </button>
+            </div>
+          ) : (
+            <p className="text-navy-light text-sm mb-6">
+              You've saved the max of {MAX_SCENARIOS} scenarios. Remove one below to save another.
+            </p>
+          )}
+
+          {savedScenarios.length > 0 && (
+            <>
+              <div className="overflow-x-auto mb-6">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-cream-dark">
+                      <th className="text-left p-2 text-navy-light font-medium">Scenario</th>
+                      <th className="text-right p-2 text-navy-light font-medium">Invested</th>
+                      <th className="text-right p-2 text-navy-light font-medium">Final Value</th>
+                      <th className="text-right p-2 text-navy-light font-medium">ROI</th>
+                      <th className="text-right p-2 text-navy-light font-medium">Sharpe</th>
+                      <th className="text-right p-2 text-navy-light font-medium">Max Drawdown</th>
+                      <th className="p-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {savedScenarios.map((s, i) => (
+                      <tr key={s.id} className="border-b border-cream-dark/50">
+                        <td className="p-2 text-navy font-medium">
+                          <span className="inline-block w-3 h-3 rounded-full mr-2 align-middle" style={{ backgroundColor: SCENARIO_COLORS[i % SCENARIO_COLORS.length] }}></span>
+                          {s.label}
+                        </td>
+                        <td className="p-2 text-right text-navy">${s.invested.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                        <td className="p-2 text-right text-navy font-semibold">${s.finalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                        <td className={`p-2 text-right font-semibold ${s.roiPercent >= 0 ? 'text-sage' : 'text-coral'}`}>
+                          {s.roiPercent >= 0 ? '+' : ''}{s.roiPercent?.toFixed(1)}%
+                        </td>
+                        <td className="p-2 text-right text-navy">{s.sharpe != null ? s.sharpe.toFixed(2) : 'N/A'}</td>
+                        <td className="p-2 text-right text-navy">{s.maxDrawdown != null ? `${s.maxDrawdown.toFixed(1)}%` : 'N/A'}</td>
+                        <td className="p-2 text-right">
+                          <button
+                            onClick={() => handleRemoveScenario(s.id)}
+                            className="text-navy-light hover:text-coral text-lg leading-none"
+                            title="Remove"
+                          >
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {savedScenarios.length >= 2 && (
+                <ScenarioComparisonChart
+                  scenarios={savedScenarios.map((s, i) => ({
+                    label: s.label,
+                    color: SCENARIO_COLORS[i % SCENARIO_COLORS.length],
+                    points: s.points,
+                  }))}
+                />
+              )}
+
+              <div className="text-center mt-4">
+                <button
+                  onClick={handleClearScenarios}
+                  className="text-navy-light hover:text-coral text-sm font-medium"
+                >
+                  Clear all saved scenarios
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
         {/* AI Analysis Button */}
         <div className="text-center">
           <button
@@ -1112,6 +1577,54 @@ Keep it encouraging, clear, and under 300 words. Use simple language, no jargon.
               {aiAnalysis && (
                 <div className="text-navy whitespace-pre-wrap leading-relaxed text-sm md:text-base">
                   {aiAnalysis}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Crash Walkthrough Modal */}
+        {showCrashModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-navy/50"
+              onClick={() => setShowCrashModal(false)}
+            />
+            <div className="relative bg-cream rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-8">
+              <button
+                onClick={() => setShowCrashModal(false)}
+                className="absolute top-4 right-4 text-navy-light hover:text-navy text-2xl leading-none"
+              >
+                ×
+              </button>
+              <h3 className="font-display text-2xl font-bold text-navy mb-1">🕰️ Crash Walkthrough</h3>
+              <p className="text-navy-light text-sm mb-6">Powered by Gemini, grounded in your real simulated data</p>
+
+              {crashLoading && (
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-3 animate-bounce">📉</div>
+                  <p className="text-navy font-semibold">Walking through the numbers...</p>
+                  <p className="text-navy-light text-sm mt-1">Gemini is reviewing your real portfolio history</p>
+                </div>
+              )}
+
+              {crashError && (
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-3">⚠️</div>
+                  <p className="text-navy font-semibold">Walkthrough failed</p>
+                  <p className="text-navy-light text-sm mt-1">{crashError}</p>
+                  <button
+                    onClick={handleCrashWalkthrough}
+                    className="mt-4 bg-coral text-white px-6 py-2 rounded-xl font-semibold hover:bg-coral/90 transition-colors"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              )}
+
+              {crashAnalysis && (
+                <div className="text-navy whitespace-pre-wrap leading-relaxed text-sm md:text-base">
+                  {crashAnalysis}
                 </div>
               )}
             </div>

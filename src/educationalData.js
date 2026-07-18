@@ -297,7 +297,7 @@ export const beginnerMistakes = [
       correct: 2,
       explanation: "Panic is the worst state for decision-making. Step back, breathe, and review your plan with a clear head."
     }
-  },                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+  },
   {
     name: "Ignoring Fees",
     emoji: "💸",
@@ -340,6 +340,130 @@ export const beginnerMistakes = [
       ],
       correct: 1,
       explanation: "Keep money you might need soon in savings. Invest only what you can truly leave alone for years."
+    }
+  }
+];
+
+// ==================== FOUNDATIONS ====================
+export const foundationsTopics = [
+  {
+    name: "Budgeting Basics",
+    subtitle: "Where Does Your Money Actually Go?",
+    emoji: "🧮",
+    learnMoreUrl: "https://www.investopedia.com/updates/50-30-20-budget/",
+    description: "A budget isn't about restriction, it's about knowing where your money goes before it's gone. The 50/30/20 rule is a simple starting framework for splitting after-tax income.",
+    keyPoints: [
+      "50% Needs — rent, groceries, utilities, minimum debt payments",
+      "30% Wants — dining out, entertainment, subscriptions",
+      "20% Savings & Debt Payoff — emergency fund, investing, extra debt payments",
+    ],
+    insight: "Investing well means nothing if your spending outpaces your income every month. Budgeting comes before investing, not after.",
+    realExample: "Someone earning $3,000/month after tax would aim for roughly $1,500 needs, $900 wants, $600 toward savings/debt under this rule.",
+    keyTakeaway: "The exact percentages matter less than having some plan. Even a rough budget beats no budget.",
+    quiz: {
+      question: "Under the 50/30/20 rule, which category do minimum debt payments fall into?",
+      options: ["Wants", "Needs", "Savings", "They don't count"],
+      correct: 1,
+      explanation: "Minimum debt payments are non-negotiable obligations, so they count as a 'Need,' just like rent or utilities."
+    }
+  },
+  {
+    name: "Emergency Fund",
+    subtitle: "Your Buffer Before You Invest",
+    emoji: "🛟",
+    learnMoreUrl: "https://www.investopedia.com/terms/e/emergency_fund.asp",
+    description: "An emergency fund is cash set aside for the unexpected — job loss, medical bills, car repairs — kept separate from investments so a bad month doesn't force you to sell at a bad time.",
+    keyPoints: [
+      "Target 3-6 months of essential expenses",
+      "Keep it in a high-yield savings account, not invested",
+      "Rebuild it immediately after using it",
+    ],
+    insight: "Markets often drop at the same time people lose jobs (recessions). Without a cash buffer, a bad economy can force you to sell investments at the worst possible time to cover an emergency.",
+    realExample: "In 2008-2009, many people without emergency funds had to sell crashed investments at steep losses just to cover basic expenses after layoffs.",
+    keyTakeaway: "Build your emergency fund before you invest aggressively. It's not wasted money — it's what lets your investments stay invested.",
+    quiz: {
+      question: "Why keep an emergency fund in cash instead of investing it?",
+      options: [
+        "Cash earns better returns than stocks",
+        "So you don't have to sell investments at a bad time to cover an emergency",
+        "It's required by law",
+        "There's no real reason, it's just tradition"
+      ],
+      correct: 1,
+      explanation: "The whole point is availability without risk — you don't want to be forced to sell investments during a downturn just to cover a surprise expense."
+    }
+  },
+  {
+    name: "Good Debt vs. Bad Debt",
+    subtitle: "Not All Debt Is The Enemy",
+    emoji: "💳",
+    learnMoreUrl: "https://www.investopedia.com/terms/d/debt.asp",
+    description: "Debt isn't inherently bad — a mortgage or student loan can build long-term value. High-interest debt (especially credit cards) is different: it compounds against you the same way investing compounds for you.",
+    keyPoints: [
+      "Credit card APRs often run 20%+ — few investments reliably beat that",
+      "Paying off high-interest debt is a guaranteed 'return' equal to the interest rate",
+      "Two common payoff strategies: avalanche (highest interest first) and snowball (smallest balance first)",
+    ],
+    insight: "If you have credit card debt at 24% APR, paying it off is mathematically better than almost any investment you could make instead — there's no investment that reliably guarantees a 24% return.",
+    realExample: "$5,000 in credit card debt at 22% APR costs over $1,100/year in interest alone if only minimum payments are made — money that could otherwise go toward savings or investing.",
+    keyTakeaway: "Prioritize paying off high-interest debt before investing aggressively. Low-interest debt (like a 4% mortgage) is much less urgent.",
+    quiz: {
+      question: "You have $2,000 in credit card debt at 22% APR and $2,000 to spare. The stock market has historically averaged about 10%/year. What's the mathematically better move?",
+      options: [
+        "Invest the $2,000 in stocks",
+        "Pay off the credit card debt",
+        "Split it evenly",
+        "It doesn't matter either way"
+      ],
+      correct: 1,
+      explanation: "Paying off 22% APR debt is a guaranteed 22% 'return' — no investment reliably beats that. Pay off high-interest debt first."
+    }
+  },
+  {
+    name: "Credit Score",
+    subtitle: "The Number That Follows You",
+    emoji: "📊",
+    learnMoreUrl: "https://www.investopedia.com/terms/c/credit_score.asp",
+    description: "Your credit score (typically 300-850) affects the interest rates you're offered on loans, credit cards, and even some rentals or insurance. It's built from a handful of factors.",
+    keyPoints: [
+      "Payment history (~35%) — paying on time matters most",
+      "Credit utilization (~30%) — how much of your available credit you're using",
+      "Length of credit history, new credit, and credit mix make up the rest",
+    ],
+    insight: "A lower credit score doesn't just mean rejection — it means paying more for the same loan. A few points of interest rate difference on a mortgage can cost tens of thousands of dollars over its lifetime.",
+    realExample: "On a $300,000, 30-year mortgage, the difference between a 6% and 7% interest rate is over $60,000 in extra interest paid over the life of the loan.",
+    keyTakeaway: "Pay on time, keep credit utilization low, and be patient. Credit history takes time to build — there's no shortcut.",
+    quiz: {
+      question: "Which single factor typically has the biggest impact on your credit score?",
+      options: ["Length of credit history", "Payment history (paying on time)", "Number of credit cards you own", "Your income"],
+      correct: 1,
+      explanation: "Payment history is usually the single largest factor. Missing payments hurts a credit score more than almost anything else."
+    }
+  },
+  {
+    name: "Employer 401(k) Match",
+    subtitle: "The Closest Thing To Free Money",
+    emoji: "🎁",
+    learnMoreUrl: "https://www.investopedia.com/terms/1/401kplan.asp",
+    description: "Many employers match a portion of what you contribute to a 401(k) retirement account — often dollar-for-dollar up to a percentage of your salary. Not claiming it means leaving money on the table.",
+    keyPoints: [
+      "A common match is 50% or 100% of contributions up to 3-6% of salary",
+      "Contributions typically come out pre-tax, lowering your taxable income today",
+      "Money grows tax-deferred until withdrawal in retirement",
+    ],
+    insight: "If your employer matches 100% up to 4% of salary and you contribute nothing, you're giving up an instant 100% return on that money before it's even invested.",
+    realExample: "Someone earning $60,000/year with a 100%-up-to-4% match who contributes 0% is giving up $2,400/year in free employer money — every single year.",
+    keyTakeaway: "At minimum, contribute enough to get the full employer match before putting money anywhere else. It's the one guaranteed 'return' most people have access to.",
+    quiz: {
+      question: "Your employer matches 100% of your 401(k) contributions up to 4% of your salary. You currently contribute 0%. What's the most financially sound first move?",
+      options: [
+        "Invest in individual stocks instead",
+        "Contribute at least 4% to capture the full match",
+        "Wait until you have no debt at all",
+        "Put the money in a savings account instead"
+      ],
+      correct: 1,
+      explanation: "The employer match is an immediate, guaranteed return that most other investments can't match. Capture it first."
     }
   }
 ];

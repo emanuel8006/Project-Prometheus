@@ -264,7 +264,24 @@ export const Quiz = ({ quiz, onComplete, soundEnabled = true, answered = false, 
   );
 };
 
-export const PortfolioChart = ({ startYear, endYear, startValue, endValue, comparisons }) => {
+/**
+ * PortfolioChart
+ *
+ * If `valueHistory` (array of { date, value } from the /simulate lambda) is
+ * provided, the "Your Portfolio" line plots those real, month-by-month
+ * combined values -- actual shares held x actual close prices, no
+ * randomness. If it's not provided (older cached results, or a failure to
+ * fetch it), the component falls back to a deterministic straight-line
+ * interpolation between startValue and endValue (no more Math.random()
+ * noise -- what you see is either real or an honest straight line, never a
+ * fabricated "realistic-looking" wiggle).
+ *
+ * The S&P 500 and savings-account comparison lines are always deterministic
+ * curves built from the final comparison totals, since we don't have a
+ * real month-by-month index/APY series wired up (a good next extension
+ * would be simulating those the same way, using SPY history).
+ */
+export const PortfolioChart = ({ startYear, endYear, startValue, endValue, comparisons, valueHistory, benchmarkHistory, panicHistory }) => {
   const chartRef = useRef(null);
   const [animated, setAnimated] = useState(false);
 
@@ -283,27 +300,48 @@ export const PortfolioChart = ({ startYear, endYear, startValue, endValue, compa
     return () => observer.disconnect();
   }, []);
 
+  const hasRealHistory = Array.isArray(valueHistory) && valueHistory.length > 1;
+  const hasRealBenchmark = Array.isArray(benchmarkHistory) && benchmarkHistory.length > 1;
+
   const years = endYear - startYear;
-  const points = Math.min(years + 1, 12);
-  
-  const generatePath = (start, end, volatility = 0.1) => {
+  const fallbackPoints = Math.min(years + 1, 12);
+  const points = hasRealHistory ? valueHistory.length : fallbackPoints;
+
+  // Deterministic straight-line interpolation -- used as a fallback only,
+  // when real history isn't available for a line.
+  const generatePath = (start, end, numPoints) => {
     const data = [];
-    let value = start;
-    
-    for (let i = 0; i < points; i++) {
-      data.push(value);
-      const progress = i / (points - 1);
-      const targetValue = start + (end - start) * progress;
-      const noise = (Math.random() - 0.5) * volatility * value;
-      value = targetValue + noise * (1 - progress);
+    for (let i = 0; i < numPoints; i++) {
+      const progress = numPoints === 1 ? 1 : i / (numPoints - 1);
+      data.push(start + (end - start) * progress);
     }
     data[data.length - 1] = end;
     return data;
   };
 
-  const portfolioData = generatePath(startValue, endValue, 0.15);
-  const sp500Data = generatePath(startValue, comparisons.sp500, 0.1);
-  const bankData = generatePath(startValue, comparisons.bank, 0);
+  const portfolioData = hasRealHistory
+    ? valueHistory.map(v => v.value)
+    : generatePath(startValue, endValue, points);
+
+  // Real SPY-based benchmark history is resampled onto the same point count
+  // as the portfolio line (both come from the same monthly snapshot cadence
+  // on the backend, so lengths normally already match).
+  const sp500Data = hasRealBenchmark && benchmarkHistory.length === points
+    ? benchmarkHistory.map(v => v.value)
+    : generatePath(startValue, comparisons.sp500, points);
+
+  const bankData = generatePath(startValue, comparisons.bank, points);
+
+  const hasPanicHistory = Array.isArray(panicHistory) && panicHistory.length === points;
+  const panicData = hasPanicHistory ? panicHistory.map(v => v.value) : null;
+
+  // Derive axis year labels from real dates when we have them, otherwise
+  // fall back to the passed startYear/endYear range.
+  const displayStartYear = hasRealHistory ? new Date(valueHistory[0].date).getFullYear() : startYear;
+  const displayEndYear = hasRealHistory
+    ? new Date(valueHistory[valueHistory.length - 1].date).getFullYear()
+    : endYear;
+  const displayYears = Math.max(displayEndYear - displayStartYear, 1);
 
   const width = 500;
   const height = 200;
@@ -311,7 +349,7 @@ export const PortfolioChart = ({ startYear, endYear, startValue, endValue, compa
   const chartWidth = width - padding * 2;
   const chartHeight = height - padding * 2;
 
-  const allValues = [...portfolioData, ...sp500Data, ...bankData, startValue];
+  const allValues = [...portfolioData, ...sp500Data, ...bankData, ...(panicData || []), startValue];
   const maxValue = Math.max(...allValues) * 1.1;
   const minValue = Math.min(...allValues) * 0.9;
 
@@ -322,7 +360,7 @@ export const PortfolioChart = ({ startYear, endYear, startValue, endValue, compa
   return (
     <div ref={chartRef} className="bg-white rounded-2xl p-6 shadow-lg">
       <h4 className="font-display text-xl font-bold text-navy mb-4">📈 Portfolio Growth Over Time</h4>
-      
+
       <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
         {[0, 0.5, 1].map((pct, i) => {
           const y = padding + pct * chartHeight;
@@ -337,7 +375,7 @@ export const PortfolioChart = ({ startYear, endYear, startValue, endValue, compa
 
         {[0, 0.5, 1].map((pct, i) => {
           const x = padding + pct * chartWidth;
-          const year = Math.round(startYear + pct * years);
+          const year = Math.round(displayStartYear + pct * displayYears);
           return <text key={i} x={x} y={height - 10} textAnchor="middle" fontSize="10" fill="#1a2744" opacity="0.5">{year}</text>;
         })}
 
@@ -345,18 +383,134 @@ export const PortfolioChart = ({ startYear, endYear, startValue, endValue, compa
           <>
             <path d={createPath(bankData)} fill="none" stroke="#9CA3AF" strokeWidth="2" strokeDasharray="4" className="chart-line" style={{ animationDelay: '0s' }} />
             <path d={createPath(sp500Data)} fill="none" stroke="#E8A54B" strokeWidth="2.5" className="chart-line" style={{ animationDelay: '0.3s' }} />
+            {hasPanicHistory && (
+              <path d={createPath(panicData)} fill="none" stroke="#D9534F" strokeWidth="2" strokeDasharray="6 3" className="chart-line" style={{ animationDelay: '0.45s' }} />
+            )}
             <path d={createPath(portfolioData)} fill="none" stroke="#3D8B8B" strokeWidth="3" className="chart-line" style={{ animationDelay: '0.6s' }} />
             <circle cx={xScale(points - 1)} cy={yScale(bankData[points - 1])} r="4" fill="#9CA3AF" className="chart-dot" style={{ animationDelay: '2s' }} />
             <circle cx={xScale(points - 1)} cy={yScale(sp500Data[points - 1])} r="5" fill="#E8A54B" className="chart-dot" style={{ animationDelay: '2.2s' }} />
+            {hasPanicHistory && (
+              <circle cx={xScale(points - 1)} cy={yScale(panicData[points - 1])} r="5" fill="#D9534F" className="chart-dot" style={{ animationDelay: '2.3s' }} />
+            )}
             <circle cx={xScale(points - 1)} cy={yScale(portfolioData[points - 1])} r="6" fill="#3D8B8B" className="chart-dot" style={{ animationDelay: '2.4s' }} />
           </>
         )}
       </svg>
 
       <div className="flex flex-wrap justify-center gap-4 mt-4 text-sm">
-        <div className="flex items-center gap-2"><div className="w-4 h-1 bg-teal rounded"></div><span className="text-navy">Your Portfolio</span></div>
-        <div className="flex items-center gap-2"><div className="w-4 h-1 bg-amber rounded"></div><span className="text-navy">S&P 500</span></div>
-        <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-gray-400 rounded"></div><span className="text-navy">Savings Account</span></div>
+        <div className="flex items-center gap-2"><div className="w-4 h-1 bg-teal rounded"></div><span className="text-navy">Your Portfolio {hasRealHistory ? '' : '(est.)'}</span></div>
+        <div className="flex items-center gap-2"><div className="w-4 h-1 bg-amber rounded"></div><span className="text-navy">S&P 500 {hasRealBenchmark ? '' : '(est.)'}</span></div>
+        <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-gray-400 rounded"></div><span className="text-navy">Savings Account (est.)</span></div>
+        {hasPanicHistory && (
+          <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-[#D9534F] rounded"></div><span className="text-navy">If You Panic-Sold</span></div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * ScenarioComparisonChart
+ *
+ * Overlays multiple saved simulation runs on one chart, even when they cover
+ * different date ranges, different tickers, or different starting amounts.
+ * Since the underlying periods differ, the x-axis is normalized to "months
+ * since each scenario's own start" rather than calendar dates -- this makes
+ * shape and relative performance comparable side by side. Each scenario's
+ * y-values are its own real value_history, not re-scaled or faked.
+ *
+ * scenarios: [{ label, color, points: [{ date, value }, ...] }]
+ */
+export const ScenarioComparisonChart = ({ scenarios }) => {
+  const chartRef = useRef(null);
+  const [animated, setAnimated] = useState(false);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setAnimated(true);
+          observer.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.3 }
+    );
+    if (chartRef.current) observer.observe(chartRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const validScenarios = (scenarios || []).filter(s => Array.isArray(s.points) && s.points.length > 1);
+  if (validScenarios.length === 0) return null;
+
+  const maxPoints = Math.max(...validScenarios.map(s => s.points.length));
+  const allValues = validScenarios.flatMap(s => s.points.map(p => p.value));
+  const maxValue = Math.max(...allValues) * 1.1;
+  const minValue = Math.min(0, ...allValues) * (Math.min(...allValues) < 0 ? 1.1 : 0.9);
+
+  const width = 500;
+  const height = 220;
+  const padding = 44;
+  const chartWidth = width - padding * 2;
+  const chartHeight = height - padding * 2;
+
+  const xScale = (i, len) => padding + (len <= 1 ? 0 : (i / (maxPoints - 1)) * chartWidth);
+  const yScale = (v) => padding + chartHeight - ((v - minValue) / (maxValue - minValue || 1)) * chartHeight;
+  const createPath = (points) => points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i, points.length)} ${yScale(p.value)}`).join(' ');
+
+  return (
+    <div ref={chartRef} className="bg-white rounded-2xl p-6 shadow-lg">
+      <h4 className="font-display text-xl font-bold text-navy mb-1">⚖️ Scenario Comparison</h4>
+      <p className="text-navy-light text-sm mb-4">
+        Each line is real simulated data, aligned by months since that scenario's own start (not calendar date), since scenarios can cover different periods.
+      </p>
+
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
+        {[0, 0.5, 1].map((pct, i) => {
+          const y = padding + pct * chartHeight;
+          const value = maxValue - pct * (maxValue - minValue);
+          return (
+            <g key={i}>
+              <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="#1a2744" strokeOpacity="0.1" />
+              <text x={padding - 5} y={y + 4} textAnchor="end" fontSize="10" fill="#1a2744" opacity="0.5">${(value / 1000).toFixed(0)}k</text>
+            </g>
+          );
+        })}
+
+        {[0, 0.5, 1].map((pct, i) => {
+          const x = padding + pct * chartWidth;
+          const monthLabel = Math.round(pct * (maxPoints - 1));
+          return <text key={i} x={x} y={height - 10} textAnchor="middle" fontSize="10" fill="#1a2744" opacity="0.5">mo {monthLabel}</text>;
+        })}
+
+        {animated && validScenarios.map((s, i) => (
+          <g key={i}>
+            <path
+              d={createPath(s.points)}
+              fill="none"
+              stroke={s.color}
+              strokeWidth="2.5"
+              className="chart-line"
+              style={{ animationDelay: `${i * 0.2}s` }}
+            />
+            <circle
+              cx={xScale(s.points.length - 1, s.points.length)}
+              cy={yScale(s.points[s.points.length - 1].value)}
+              r="5"
+              fill={s.color}
+              className="chart-dot"
+              style={{ animationDelay: `${1.5 + i * 0.2}s` }}
+            />
+          </g>
+        ))}
+      </svg>
+
+      <div className="flex flex-wrap justify-center gap-4 mt-4 text-sm">
+        {validScenarios.map((s, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <div className="w-4 h-1 rounded" style={{ backgroundColor: s.color }}></div>
+            <span className="text-navy">{s.label}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

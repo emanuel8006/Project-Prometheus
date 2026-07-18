@@ -109,8 +109,8 @@ function Module3({ onQuizComplete, soundEnabled, quizScores }) {
           <PageNavigation 
             prevPath="/module/2" 
             prevLabel="Psychology"
-            nextPath="/simulation" 
-            nextLabel="Try the Simulation"
+            nextPath="/module/4" 
+            nextLabel="Foundations"
             nextDisabled={!allAnswered}
           />
         </div>
