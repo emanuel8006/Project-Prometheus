@@ -467,3 +467,136 @@ export const foundationsTopics = [
     }
   }
 ];
+// ==================== ADVANCED TRACK (append to educationalData.js) ====================
+export const advancedTopics = [
+  {
+    name: "Options Fundamentals",
+    subtitle: "The Right, Not The Obligation",
+    emoji: "⚡",
+    learnMoreUrl: "https://www.investopedia.com/terms/o/optionscontract.asp",
+    description: "An option is a contract that gives you the right (not the obligation) to buy or sell a stock at a set price (the strike) by a set date. A call bets the price goes up; a put bets it goes down.",
+    keyPoints: [
+      "Buying an option costs a premium — that's your max loss if you're long",
+      "Selling (writing) an option collects the premium upfront, but carries much bigger risk",
+      "A short call has theoretically unlimited loss potential, since a stock price has no ceiling",
+    ],
+    insight: "Options are leveraged: a small premium controls a much larger position, which magnifies both gains and losses relative to just owning the stock outright.",
+    realExample: "A call option with a $100 strike costing $5/share (so $500 per contract of 100 shares) is worthless if the stock stays at or below $100 at expiration — the full $500 premium is lost.",
+    keyTakeaway: "Never sell (write) options you don't fully understand — the loss potential on the short side is a completely different risk profile than buying stock.",
+    toolLink: { path: '/options-payoff', label: 'Try the Options Payoff Visualizer' },
+    quiz: {
+      question: "You sell (write) a call option without owning the underlying stock. What's the risk profile?",
+      options: [
+        "Limited loss, limited gain",
+        "Limited loss, unlimited gain",
+        "Unlimited loss, limited gain",
+        "No risk at all"
+      ],
+      correct: 2,
+      explanation: "A short (uncovered) call has a capped gain (the premium collected) but theoretically unlimited loss, since the stock price has no ceiling."
+    }
+  },
+  {
+    name: "Technical Indicators: Moving Averages",
+    subtitle: "Smoothing Out The Noise",
+    emoji: "📉",
+    learnMoreUrl: "https://www.investopedia.com/terms/m/movingaverage.asp",
+    description: "A moving average smooths daily price noise into a trend line by averaging price over a rolling window (e.g. the last 20 or 50 days). Comparing a short-window and long-window average is a classic way traders spot emerging trends.",
+    keyPoints: [
+      "Short-window averages react faster to recent price changes",
+      "Long-window averages are smoother and slower to react",
+      "A 'golden cross' is short crossing above long (bullish signal); a 'death cross' is the reverse (bearish signal)",
+    ],
+    insight: "Moving average crossovers are lagging indicators — by the time a crossover happens, a meaningful chunk of the price move has usually already occurred. They confirm trends more than predict them.",
+    realExample: "A 20-day/50-day crossover strategy tends to catch strong sustained trends well, but generates frequent false signals ('whipsaws') during choppy, sideways markets.",
+    keyTakeaway: "Moving average crossover strategies don't reliably beat simply buying and holding over long periods — but they're a foundational building block for understanding trend-following systems.",
+    toolLink: { path: '/algo-backtester', label: 'Backtest a Moving Average Crossover' },
+    quiz: {
+      question: "The 20-day moving average crosses above the 50-day moving average. What is this commonly called?",
+      options: ["A death cross", "A golden cross", "A breakout", "A reversal pattern"],
+      correct: 1,
+      explanation: "A short-term average crossing above a longer-term average is called a golden cross, often read as a bullish signal."
+    }
+  },
+  {
+    name: "Technical Indicators: RSI",
+    subtitle: "Measuring Overbought & Oversold",
+    emoji: "🌡️",
+    learnMoreUrl: "https://www.investopedia.com/terms/r/rsi.asp",
+    description: "The Relative Strength Index (RSI) measures the speed and size of recent price changes on a 0-100 scale, used to spot potentially overbought (often above 70) or oversold (often below 30) conditions.",
+    keyPoints: [
+      "RSI above 70 is often read as 'overbought' — the price may be due for a pullback",
+      "RSI below 30 is often read as 'oversold' — the price may be due for a bounce",
+      "RSI can stay overbought or oversold for extended periods during strong trends",
+    ],
+    insight: "RSI works best in range-bound (sideways) markets. In strong trending markets, a stock can stay 'overbought' for months while continuing to climb — treating RSI extremes as automatic buy/sell signals can mean missing a strong trend entirely.",
+    realExample: "During a strong bull run, a stock's RSI can remain above 70 for extended stretches while the price keeps climbing — a trader mechanically selling every 'overbought' signal would have exited far too early.",
+    keyTakeaway: "RSI is one signal among many, not a standalone trading system. It's most useful combined with other context, like the overall trend direction.",
+    toolLink: { path: '/algo-backtester', label: 'Backtest an RSI Strategy' },
+    quiz: {
+      question: "A stock's RSI has been above 70 for three straight weeks during a strong uptrend. What does this most likely mean?",
+      options: [
+        "The stock is guaranteed to crash immediately",
+        "RSI is broken and unreliable",
+        "The stock is in a strong trend and RSI extremes can persist",
+        "The stock should be shorted immediately"
+      ],
+      correct: 2,
+      explanation: "RSI can remain in 'overbought' territory for a long time during strong trends — it's a reminder that RSI signals don't work equally well in all market conditions."
+    }
+  },
+  {
+    name: "Diversification & Correlation",
+    subtitle: "Why Owning Ten Tech Stocks Isn't Diversified",
+    emoji: "🧩",
+    learnMoreUrl: "https://www.investopedia.com/terms/c/correlation.asp",
+    description: "Correlation measures how much two assets move together, from -1 (perfectly opposite) to +1 (perfectly together). Real diversification comes from combining assets with low or negative correlation, not just owning more tickers.",
+    keyPoints: [
+      "Owning 10 different tech stocks is far less diversified than it looks — they tend to move together (high correlation)",
+      "Combining assets with low correlation smooths out the portfolio's overall ups and downs",
+      "Correlation isn't fixed — it can rise sharply during market crashes ('correlations go to 1' is a well-known phenomenon in a panic)",
+    ],
+    insight: "This is the mathematical core of Modern Portfolio Theory: for the same expected return, a portfolio of imperfectly-correlated assets carries less risk (volatility) than any single asset alone.",
+    realExample: "In the 2008 crisis, assets that normally had low correlation (stocks, certain bonds, some commodities) suddenly moved together as investors sold everything for cash — diversification benefits shrank exactly when they were needed most.",
+    keyTakeaway: "Check actual correlation, not just the number of tickers you own, when assessing how diversified a portfolio really is.",
+    toolLink: { path: '/simulation', label: 'Check Your Own Diversification Score' },
+    quiz: {
+      question: "You own 8 different large-cap technology stocks. How diversified is this portfolio, in terms of real risk reduction?",
+      options: [
+        "Very diversified — 8 different companies is a lot",
+        "Not very diversified — tech stocks tend to be highly correlated with each other",
+        "Perfectly diversified as long as you hold long-term",
+        "Diversification doesn't apply to stocks, only to asset classes"
+      ],
+      correct: 1,
+      explanation: "Stocks within the same sector tend to be highly correlated, so owning many of them provides much less real diversification than it appears."
+    }
+  },
+  {
+    name: "Risk-Adjusted Returns: Sharpe Ratio",
+    subtitle: "Return Isn't The Whole Story",
+    emoji: "📐",
+    learnMoreUrl: "https://www.investopedia.com/terms/s/sharperatio.asp",
+    description: "The Sharpe ratio measures return earned per unit of risk (volatility) taken, calculated as (return − risk-free rate) ÷ volatility. A higher Sharpe ratio means better risk-adjusted performance, not just higher raw returns.",
+    keyPoints: [
+      "Two portfolios can have the same return but very different Sharpe ratios if one is far more volatile",
+      "A Sharpe ratio above 1 is generally considered good; above 2 is very good",
+      "Sharpe ratio doesn't distinguish 'good' volatility (upside swings) from 'bad' volatility (downside swings) — it penalizes both equally",
+    ],
+    insight: "A portfolio that returns 15%/year with wild swings can have a worse Sharpe ratio than one that returns a steadier 10%/year — meaning the smoother portfolio delivered more return for the risk actually taken.",
+    realExample: "A concentrated single-stock portfolio might return 20%/year on average but with such large swings that its Sharpe ratio is lower than a diversified portfolio returning a steadier 12%/year.",
+    keyTakeaway: "When comparing investment options, don't just compare returns — compare returns relative to the volatility that produced them.",
+    toolLink: { path: '/simulation', label: 'See Your Own Sharpe Ratio' },
+    quiz: {
+      question: "Portfolio A returns 18%/year with high volatility. Portfolio B returns 12%/year with low volatility, and has a higher Sharpe ratio than A. What does this tell you?",
+      options: [
+        "Portfolio A is definitely the better choice",
+        "Portfolio B delivered more return per unit of risk taken",
+        "Sharpe ratio doesn't matter if raw returns are lower",
+        "Portfolio B must be a scam since its return is lower"
+      ],
+      correct: 1,
+      explanation: "A higher Sharpe ratio means better risk-adjusted performance — Portfolio B earned more return for the amount of volatility it took on, even though its raw return was lower."
+    }
+  }
+];

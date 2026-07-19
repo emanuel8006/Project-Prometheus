@@ -32,6 +32,11 @@ const StockSimulation = ({ session }) => {
       useCustomDates: false,
       customStartDate: '',
       customEndDate: '',
+      useCustomWeights: false,
+      annualFeePct: 0,
+      useWithdrawal: false,
+      withdrawalStartDate: '',
+      withdrawalAmount: 500,
     };
   });
   const [selectedCategories, setSelectedCategories] = useState(() => {
@@ -61,6 +66,7 @@ const StockSimulation = ({ session }) => {
   });
   const [simulationLoading, setSimulationLoading] = useState(false);
   const [simulationError, setSimulationError] = useState(null);
+  const [stockWeights, setStockWeights] = useState({});
 
   // Save to localStorage whenever state changes
   useEffect(() => {
@@ -234,64 +240,84 @@ const StockSimulation = ({ session }) => {
     }
   };
 
-  const handleStocksSubmit = async () => {
+  const runSimulation = async (weightsMap) => {
+    setStep('results');
+    setSimulationLoading(true);
+    setSimulationError(null);
+    setSimulationResult(null);
+    try {
+      const allTickers = Object.values(selectedStocks).flat().map(s => s.ticker);
+      const isDca = config.investmentStrategy === 'dca';
+
+      const res = await fetch(`${API_BASE_URL}/simulate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          // Pure DCA runs have no lump sum; a tiny nonzero value keeps the
+          // backend's per-ticker cash split well-defined.
+          starting_cash: isDca ? 0.01 : config.investment,
+          start_year: config.year,
+          end_year: new Date().getFullYear(),
+          start_date: config.useCustomDates ? config.customStartDate : null,
+          end_date: config.useCustomDates ? config.customEndDate : null,
+          tickers: allTickers,
+          contribution_amount: isDca ? config.dcaMonthly : 0,
+          contribution_frequency: isDca ? 'monthly' : 'none',
+          panic_sell_date: config.panicSellDate || null,
+          rebalance_frequency: config.rebalanceFrequency || 'none',
+          weights: weightsMap || null,
+          annual_fee_pct: config.annualFeePct || 0,
+          withdrawal_start_date: config.useWithdrawal ? config.withdrawalStartDate : null,
+          withdrawal_amount: config.useWithdrawal ? config.withdrawalAmount : 0,
+        }),
+      });
+      const data = await res.json();
+      setSimulationResult(data);
+
+      // When signed in, save simulation to DB so leaderboard shows user's amount, year, balance, profit, ROI
+      if (session?.user?.email && data?.final_cash != null) {
+        try {
+          const userData = await getUserData(session.user.email);
+          const portfolioId = userData?.portfolios?.[0]?.id;
+          const startingBalance = isDca ? (data.total_contributed ?? 0) : data.starting_cash;
+          if (portfolioId) {
+            await updatePortfolioFromSimulation(portfolioId, {
+              starting_balance: startingBalance,
+              current_balance: data.final_cash,
+              investment_year: config.year,
+            });
+          }
+        } catch (saveErr) {
+          console.warn('Could not save simulation to leaderboard:', saveErr);
+        }
+      }
+    } catch (err) {
+      setSimulationError(err.message);
+    } finally {
+      setSimulationLoading(false);
+    }
+  };
+
+  const handleStocksSubmit = () => {
     if (currentCategoryIndex < selectedCategories.length - 1) {
       setCurrentCategoryIndex(currentCategoryIndex + 1);
       setSearchQuery('');
       setFilters({ peMin: '', peMax: '', betaMin: '', betaMax: '', dividendMin: '', dividendMax: '' });
+    } else if (config.useCustomWeights) {
+      // Initialize equal weights as a starting point, then let the user adjust
+      const allTickers = Object.values(selectedStocks).flat().map(s => s.ticker);
+      const equalShare = +(100 / allTickers.length).toFixed(2);
+      const initial = {};
+      allTickers.forEach(t => { initial[t] = equalShare; });
+      setStockWeights(initial);
+      setStep('weights');
     } else {
-      setStep('results');
-      setSimulationLoading(true);
-      setSimulationError(null);
-      setSimulationResult(null);
-      try {
-        const allTickers = Object.values(selectedStocks).flat().map(s => s.ticker);
-        const isDca = config.investmentStrategy === 'dca';
-
-        const res = await fetch(`${API_BASE_URL}/simulate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            // Pure DCA runs have no lump sum; a tiny nonzero value keeps the
-            // backend's per-ticker cash split well-defined.
-            starting_cash: isDca ? 0.01 : config.investment,
-            start_year: config.year,
-            end_year: new Date().getFullYear(),
-            start_date: config.useCustomDates ? config.customStartDate : null,
-            end_date: config.useCustomDates ? config.customEndDate : null,
-            tickers: allTickers,
-            contribution_amount: isDca ? config.dcaMonthly : 0,
-            contribution_frequency: isDca ? 'monthly' : 'none',
-            panic_sell_date: config.panicSellDate || null,
-            rebalance_frequency: config.rebalanceFrequency || 'none',
-          }),
-        });
-        const data = await res.json();
-        setSimulationResult(data);
-
-        // When signed in, save simulation to DB so leaderboard shows user's amount, year, balance, profit, ROI
-        if (session?.user?.email && data?.final_cash != null) {
-          try {
-            const userData = await getUserData(session.user.email);
-            const portfolioId = userData?.portfolios?.[0]?.id;
-            const startingBalance = isDca ? (data.total_contributed ?? 0) : data.starting_cash;
-            if (portfolioId) {
-              await updatePortfolioFromSimulation(portfolioId, {
-                starting_balance: startingBalance,
-                current_balance: data.final_cash,
-                investment_year: config.year,
-              });
-            }
-          } catch (saveErr) {
-            console.warn('Could not save simulation to leaderboard:', saveErr);
-          }
-        }
-      } catch (err) {
-        setSimulationError(err.message);
-      } finally {
-        setSimulationLoading(false);
-      }
+      runSimulation(null);
     }
+  };
+
+  const handleWeightsSubmit = () => {
+    runSimulation(stockWeights);
   };
 
   const handleReset = () => {
@@ -300,6 +326,7 @@ const StockSimulation = ({ session }) => {
     setSelectedStocks({});
     setCurrentCategoryIndex(0);
     setSearchQuery('');
+    setStockWeights({});
     setFilters({ peMin: '', peMax: '', betaMin: '', betaMax: '', dividendMin: '', dividendMax: '' });
     setConfig({
       year: SIMULATION_CONFIG.defaultYear,
@@ -314,6 +341,11 @@ const StockSimulation = ({ session }) => {
       useCustomDates: false,
       customStartDate: '',
       customEndDate: '',
+      useCustomWeights: false,
+      annualFeePct: 0,
+      useWithdrawal: false,
+      withdrawalStartDate: '',
+      withdrawalAmount: 500,
     });
     setSimulationResult(null);
     // Clear localStorage
@@ -808,6 +840,107 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
               </div>
             </div>
 
+            <div>
+              <label className="block text-navy font-medium mb-2">Custom Allocation (optional)</label>
+              <p className="text-navy-light text-sm mb-3">
+                If you pick multiple stocks, set exact percentages instead of splitting your cash equally.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfig({ ...config, useCustomWeights: false })}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    !config.useCustomWeights ? 'bg-teal text-white' : 'bg-cream-dark text-navy hover:bg-teal/20'
+                  }`}
+                >
+                  Equal Split
+                </button>
+                <button
+                  onClick={() => setConfig({ ...config, useCustomWeights: true })}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    config.useCustomWeights ? 'bg-teal text-white' : 'bg-cream-dark text-navy hover:bg-teal/20'
+                  }`}
+                >
+                  Custom %
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-navy font-medium mb-2">Annual Fee / Expense Ratio (optional)</label>
+              <p className="text-navy-light text-sm mb-3">
+                Simulate a fund's expense ratio, deducted monthly and compounding against your balance over time.
+              </p>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {[0, 0.1, 0.5, 1, 1.5].map(pct => (
+                  <button
+                    key={pct}
+                    onClick={() => setConfig({ ...config, annualFeePct: pct })}
+                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                      config.annualFeePct === pct ? 'bg-teal text-white' : 'bg-cream-dark text-navy hover:bg-teal/20'
+                    }`}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+              </div>
+              <p className="text-navy-light text-xs">
+                Index funds often run 0.03-0.20%. Actively managed funds can run 1%+. We'll show you exactly what the difference costs over your timeframe.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-navy font-medium mb-2">Withdrawals in Retirement (optional)</label>
+              <p className="text-navy-light text-sm mb-3">
+                Simulate pulling a fixed amount out monthly starting on a chosen date, using real prices for that period — this shows whether the money would have actually lasted.
+              </p>
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={() => setConfig({ ...config, useWithdrawal: false })}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    !config.useWithdrawal ? 'bg-teal text-white' : 'bg-cream-dark text-navy hover:bg-teal/20'
+                  }`}
+                >
+                  No Withdrawals
+                </button>
+                <button
+                  onClick={() => setConfig({ ...config, useWithdrawal: true })}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    config.useWithdrawal ? 'bg-teal text-white' : 'bg-cream-dark text-navy hover:bg-teal/20'
+                  }`}
+                >
+                  Simulate Withdrawals
+                </button>
+              </div>
+
+              {config.useWithdrawal && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-navy-light text-xs mb-1">Start withdrawing on</label>
+                    <input
+                      type="date"
+                      value={config.withdrawalStartDate}
+                      onChange={(e) => setConfig({ ...config, withdrawalStartDate: e.target.value })}
+                      min={config.useCustomDates ? config.customStartDate : `${config.year}-01-01`}
+                      max={new Date().toISOString().split('T')[0]}
+                      className="w-full p-3 rounded-lg border-2 border-cream-dark bg-white text-navy font-medium focus:border-teal focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-navy-light text-xs mb-1">Monthly withdrawal</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-navy">$</span>
+                      <input
+                        type="number"
+                        value={config.withdrawalAmount}
+                        onChange={(e) => setConfig({ ...config, withdrawalAmount: Math.max(0, parseFloat(e.target.value) || 0) })}
+                        className="w-full p-3 pl-7 rounded-lg border-2 border-cream-dark bg-white text-navy font-medium focus:border-teal focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-navy font-medium mb-2">Categories to Pick</label>
@@ -1131,7 +1264,83 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
                 : 'bg-cream-dark text-navy-light cursor-not-allowed'
             }`}
           >
-            {currentCategoryIndex < selectedCategories.length - 1 ? 'Next Category' : 'See Results'}
+            {currentCategoryIndex < selectedCategories.length - 1
+              ? 'Next Category'
+              : config.useCustomWeights ? 'Set Allocation' : 'See Results'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Weights Step (only reached when config.useCustomWeights is true)
+  if (step === 'weights') {
+    const allStocks = Object.values(selectedStocks).flat();
+    const totalPct = Object.values(stockWeights).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+    const isCloseTo100 = Math.abs(totalPct - 100) < 0.5;
+
+    const updateWeight = (ticker, value) => {
+      setStockWeights(prev => ({ ...prev, [ticker]: value }));
+    };
+
+    const distributeEqually = () => {
+      const equalShare = +(100 / allStocks.length).toFixed(2);
+      const initial = {};
+      allStocks.forEach(s => { initial[s.ticker] = equalShare; });
+      setStockWeights(initial);
+    };
+
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white rounded-2xl p-8 shadow-lg">
+          <h3 className="font-display text-2xl font-bold text-navy mb-2">Set Your Allocation</h3>
+          <p className="text-navy-light mb-6">
+            Assign a percentage of your cash to each pick. Doesn't need to be exact — we'll normalize to 100%.
+          </p>
+
+          <div className="space-y-3 mb-6">
+            {allStocks.map(stock => (
+              <div key={stock.ticker} className="flex items-center gap-4">
+                <span className="font-semibold text-navy w-20">{stock.ticker}</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={stockWeights[stock.ticker] || 0}
+                  onChange={(e) => updateWeight(stock.ticker, parseFloat(e.target.value))}
+                  className="flex-1 accent-teal"
+                />
+                <div className="relative w-20">
+                  <input
+                    type="number"
+                    value={stockWeights[stock.ticker] || 0}
+                    onChange={(e) => updateWeight(stock.ticker, e.target.value)}
+                    className="w-full p-2 pr-6 rounded-lg border-2 border-cream-dark text-navy text-sm text-right focus:border-teal focus:outline-none"
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-navy-light text-xs">%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between mb-6">
+            <button onClick={distributeEqually} className="text-teal hover:text-teal-light text-sm font-medium">
+              Reset to equal split
+            </button>
+            <p className={`text-sm font-semibold ${isCloseTo100 ? 'text-sage' : 'text-coral'}`}>
+              Total: {totalPct.toFixed(1)}%
+            </p>
+          </div>
+
+          <button
+            onClick={handleWeightsSubmit}
+            disabled={totalPct <= 0}
+            className={`w-full py-3 rounded-xl font-semibold transition-colors ${
+              totalPct > 0 ? 'bg-navy text-white hover:bg-navy-light' : 'bg-cream-dark text-navy-light cursor-not-allowed'
+            }`}
+          >
+            See Results
           </button>
         </div>
       </div>
@@ -1249,6 +1458,7 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
           valueHistory={simulationResult.value_history}
           benchmarkHistory={simulationResult.benchmark?.value_history}
           panicHistory={results.panicSell?.value_history}
+          feeFreeHistory={simulationResult.fee_comparison?.value_history_without_fee}
         />
 
         {/* Stock Breakdown */}
@@ -1260,6 +1470,11 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
                 <div>
                   <span className="font-bold text-navy">{stock.ticker}</span>
                   <span className="text-navy-light text-sm ml-2">({stock.shares.toFixed(2)} shares)</span>
+                  {simulationResult.weights?.[stock.ticker] != null && (
+                    <span className="text-navy-light text-xs ml-2 bg-cream-dark px-2 py-0.5 rounded-full">
+                      {simulationResult.weights[stock.ticker]}% allocated
+                    </span>
+                  )}
                 </div>
                 <div className="text-right">
                   <span className="font-semibold text-navy">${stock.currentValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
@@ -1379,6 +1594,69 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
             </div>
             <p className="text-navy-light text-xs mt-4 text-center">
               Red = tend to move together (less diversified) · Blue = move independently or opposite (more diversified)
+            </p>
+          </div>
+        )}
+
+        {/* Withdrawal Simulation Outcome */}
+        {simulationResult.withdrawal_start_date && simulationResult.withdrawal_amount > 0 && (
+          <div className={`rounded-2xl p-8 ${simulationResult.depletion_date ? 'bg-coral/20 border-2 border-coral' : 'bg-sage/20 border-2 border-sage'}`}>
+            <h4 className="font-display text-xl font-bold text-navy mb-1">
+              {simulationResult.depletion_date ? '⚠️ Money Ran Out' : '✅ Withdrawals Held Up'}
+            </h4>
+            <p className="text-navy-light text-sm mb-6">
+              Withdrawing ${simulationResult.withdrawal_amount.toLocaleString()}/month starting {simulationResult.withdrawal_start_date}, using real prices for that period.
+            </p>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="p-4 bg-white rounded-xl">
+                <p className="text-navy-light text-sm mb-1">Total withdrawn</p>
+                <p className="font-display text-2xl font-bold text-navy">
+                  ${simulationResult.total_withdrawn.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+              <div className="p-4 bg-white rounded-xl">
+                <p className="text-navy-light text-sm mb-1">
+                  {simulationResult.depletion_date ? 'Ran out on' : 'Remaining balance'}
+                </p>
+                <p className={`font-display text-2xl font-bold ${simulationResult.depletion_date ? 'text-coral' : 'text-sage'}`}>
+                  {simulationResult.depletion_date
+                    ? simulationResult.depletion_date
+                    : `$${simulationResult.final_cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                </p>
+              </div>
+            </div>
+            {simulationResult.depletion_date && (
+              <p className="text-navy text-sm mt-4 text-center">
+                This is real sequence-of-returns risk — the actual order and timing of market moves during withdrawal matters, not just the average return. The same average return with different timing could have lasted much longer.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Fee Drag Comparison */}
+        {simulationResult.fee_comparison && (
+          <div className="rounded-2xl p-8 bg-amber/10 border-2 border-amber">
+            <h4 className="font-display text-xl font-bold text-navy mb-1">💸 What Fees Actually Cost You</h4>
+            <p className="text-navy-light text-sm mb-6">
+              Same simulation, run twice — once with your {simulationResult.fee_comparison.annual_fee_pct}% annual fee, once at 0%.
+            </p>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="p-4 bg-white rounded-xl">
+                <p className="text-navy-light text-sm mb-1">Without fees</p>
+                <p className="font-display text-3xl font-bold text-sage">
+                  ${simulationResult.fee_comparison.final_value_without_fee.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+              <div className="p-4 bg-white rounded-xl">
+                <p className="text-navy-light text-sm mb-1">With {simulationResult.fee_comparison.annual_fee_pct}% annual fee</p>
+                <p className="font-display text-3xl font-bold text-amber">
+                  ${simulationResult.fee_comparison.final_value_with_fee.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+            </div>
+            <p className="text-navy font-semibold mt-4 text-center">
+              That {simulationResult.fee_comparison.annual_fee_pct}% fee cost you ${simulationResult.fee_comparison.cost_of_fees.toLocaleString(undefined, { maximumFractionDigits: 0 })} over this period —
+              a small-looking annual number that compounds into something much bigger over time.
             </p>
           </div>
         )}

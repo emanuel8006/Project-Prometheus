@@ -7,10 +7,13 @@ const modules = [
   { path: '/module/2', name: 'Psychology', short: '2', questions: 5, prefix: 'psych' },
   { path: '/module/3', name: 'Mistakes', short: '3', questions: 5, prefix: 'mistake' },
   { path: '/module/4', name: 'Foundations', short: '4', questions: 5, prefix: 'foundation' },
+  { path: '/module/5', name: 'Advanced', short: '5', questions: 5, prefix: 'advanced' },
   { path: '/simulation', name: 'Simulation', short: '🎮', questions: 0, prefix: null },
   { path: '/goal-planner', name: 'Goal Planner', short: '🎯', questions: 0, prefix: null },
   { path: '/debt-payoff', name: 'Debt Payoff', short: '💳', questions: 0, prefix: null },
   { path: '/monte-carlo', name: 'Monte Carlo', short: '🎲', questions: 0, prefix: null },
+  { path: '/options-payoff', name: 'Options Payoff', short: '⚡', questions: 0, prefix: null },
+  { path: '/algo-backtester', name: 'Backtester', short: '🤖', questions: 0, prefix: null },
   { path: '/conclusion', name: 'Conclusion', short: '✓', questions: 0, prefix: null },
 ];
 

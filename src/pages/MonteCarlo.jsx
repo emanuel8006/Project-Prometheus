@@ -353,8 +353,8 @@ function MonteCarlo() {
           <PageNavigation
             prevPath="/debt-payoff"
             prevLabel="Debt Payoff"
-            nextPath="/conclusion"
-            nextLabel="See Conclusion"
+            nextPath="/options-payoff"
+            nextLabel="Options Payoff Visualizer"
           />
         </div>
       </div>

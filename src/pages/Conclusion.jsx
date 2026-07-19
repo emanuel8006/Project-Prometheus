@@ -1,6 +1,15 @@
 import { Link } from 'react-router-dom';
 import { FadeInSection } from '../components';
 
+const TOOLS = [
+  { path: '/simulation', label: 'Stock Simulator', emoji: '🎮' },
+  { path: '/goal-planner', label: 'Goal Planner', emoji: '🎯' },
+  { path: '/debt-payoff', label: 'Debt Payoff Calculator', emoji: '💳' },
+  { path: '/monte-carlo', label: 'Monte Carlo Simulator', emoji: '🎲' },
+  { path: '/options-payoff', label: 'Options Payoff Visualizer', emoji: '⚡' },
+  { path: '/algo-backtester', label: 'Strategy Backtester', emoji: '🤖' },
+];
+
 function Conclusion({ totalCorrect, totalAnswered }) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-cream to-cream-dark pt-20 pb-32 md:pb-12">
@@ -31,12 +40,12 @@ function Conclusion({ totalCorrect, totalAnswered }) {
 
           <FadeInSection delay={0.3}>
             <p className="text-xl text-navy-light mb-8">
-              You've covered chart reading, key metrics, investor psychology, and common mistakes. This is a foundation—not the whole picture.
+              You've covered chart reading, key metrics, investor psychology, common mistakes, financial foundations, and the advanced track. This is a strong base — not the whole picture.
             </p>
           </FadeInSection>
 
           <FadeInSection delay={0.4}>
-            <div className="bg-white rounded-2xl p-8 shadow-lg mb-12 text-left">
+            <div className="bg-white rounded-2xl p-8 shadow-lg mb-8 text-left">
               <h3 className="font-display text-xl font-bold text-navy mb-4 text-center">Key points to remember:</h3>
               <ul className="space-y-3 text-navy-light">
                 <li className="flex gap-3">
@@ -57,9 +66,31 @@ function Conclusion({ totalCorrect, totalAnswered }) {
                 </li>
                 <li className="flex gap-3">
                   <span className="text-teal">✓</span>
+                  <span>Budget and emergency fund come before investing</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="text-teal">✓</span>
                   <span>When in doubt, diversified index funds are solid</span>
                 </li>
               </ul>
+            </div>
+          </FadeInSection>
+
+          <FadeInSection delay={0.45}>
+            <div className="bg-white rounded-2xl p-8 shadow-lg mb-12 text-left">
+              <h3 className="font-display text-xl font-bold text-navy mb-4 text-center">Keep exploring the tools:</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {TOOLS.map(tool => (
+                  <Link
+                    key={tool.path}
+                    to={tool.path}
+                    className="flex flex-col items-center text-center p-4 bg-cream rounded-xl hover:bg-teal/10 transition-colors"
+                  >
+                    <span className="text-2xl mb-1">{tool.emoji}</span>
+                    <span className="text-navy text-sm font-medium">{tool.label}</span>
+                  </Link>
+                ))}
+              </div>
             </div>
           </FadeInSection>
 

@@ -281,7 +281,7 @@ export const Quiz = ({ quiz, onComplete, soundEnabled = true, answered = false, 
  * real month-by-month index/APY series wired up (a good next extension
  * would be simulating those the same way, using SPY history).
  */
-export const PortfolioChart = ({ startYear, endYear, startValue, endValue, comparisons, valueHistory, benchmarkHistory, panicHistory }) => {
+export const PortfolioChart = ({ startYear, endYear, startValue, endValue, comparisons, valueHistory, benchmarkHistory, panicHistory, feeFreeHistory }) => {
   const chartRef = useRef(null);
   const [animated, setAnimated] = useState(false);
 
@@ -335,6 +335,9 @@ export const PortfolioChart = ({ startYear, endYear, startValue, endValue, compa
   const hasPanicHistory = Array.isArray(panicHistory) && panicHistory.length === points;
   const panicData = hasPanicHistory ? panicHistory.map(v => v.value) : null;
 
+  const hasFeeFreeHistory = Array.isArray(feeFreeHistory) && feeFreeHistory.length === points;
+  const feeFreeData = hasFeeFreeHistory ? feeFreeHistory.map(v => v.value) : null;
+
   // Derive axis year labels from real dates when we have them, otherwise
   // fall back to the passed startYear/endYear range.
   const displayStartYear = hasRealHistory ? new Date(valueHistory[0].date).getFullYear() : startYear;
@@ -349,7 +352,7 @@ export const PortfolioChart = ({ startYear, endYear, startValue, endValue, compa
   const chartWidth = width - padding * 2;
   const chartHeight = height - padding * 2;
 
-  const allValues = [...portfolioData, ...sp500Data, ...bankData, ...(panicData || []), startValue];
+  const allValues = [...portfolioData, ...sp500Data, ...bankData, ...(panicData || []), ...(feeFreeData || []), startValue];
   const maxValue = Math.max(...allValues) * 1.1;
   const minValue = Math.min(...allValues) * 0.9;
 
@@ -386,11 +389,17 @@ export const PortfolioChart = ({ startYear, endYear, startValue, endValue, compa
             {hasPanicHistory && (
               <path d={createPath(panicData)} fill="none" stroke="#D9534F" strokeWidth="2" strokeDasharray="6 3" className="chart-line" style={{ animationDelay: '0.45s' }} />
             )}
+            {hasFeeFreeHistory && (
+              <path d={createPath(feeFreeData)} fill="none" stroke="#5B8C5A" strokeWidth="2" strokeDasharray="2 3" className="chart-line" style={{ animationDelay: '0.5s' }} />
+            )}
             <path d={createPath(portfolioData)} fill="none" stroke="#3D8B8B" strokeWidth="3" className="chart-line" style={{ animationDelay: '0.6s' }} />
             <circle cx={xScale(points - 1)} cy={yScale(bankData[points - 1])} r="4" fill="#9CA3AF" className="chart-dot" style={{ animationDelay: '2s' }} />
             <circle cx={xScale(points - 1)} cy={yScale(sp500Data[points - 1])} r="5" fill="#E8A54B" className="chart-dot" style={{ animationDelay: '2.2s' }} />
             {hasPanicHistory && (
               <circle cx={xScale(points - 1)} cy={yScale(panicData[points - 1])} r="5" fill="#D9534F" className="chart-dot" style={{ animationDelay: '2.3s' }} />
+            )}
+            {hasFeeFreeHistory && (
+              <circle cx={xScale(points - 1)} cy={yScale(feeFreeData[points - 1])} r="5" fill="#5B8C5A" className="chart-dot" style={{ animationDelay: '2.35s' }} />
             )}
             <circle cx={xScale(points - 1)} cy={yScale(portfolioData[points - 1])} r="6" fill="#3D8B8B" className="chart-dot" style={{ animationDelay: '2.4s' }} />
           </>
@@ -403,6 +412,9 @@ export const PortfolioChart = ({ startYear, endYear, startValue, endValue, compa
         <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-gray-400 rounded"></div><span className="text-navy">Savings Account (est.)</span></div>
         {hasPanicHistory && (
           <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-[#D9534F] rounded"></div><span className="text-navy">If You Panic-Sold</span></div>
+        )}
+        {hasFeeFreeHistory && (
+          <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-[#5B8C5A] rounded"></div><span className="text-navy">Without Fees</span></div>
         )}
       </div>
     </div>
