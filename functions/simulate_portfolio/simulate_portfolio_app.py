@@ -654,6 +654,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         custom_end_date: Optional[str] = body.get('end_date') or None
         raw_weights: Optional[Dict[str, Any]] = body.get('weights') or None
         annual_fee_pct: float = float(body.get('annual_fee_pct') or 0)
+        tax_treatment: str = (body.get('tax_treatment') or 'none').lower()
+        tax_rate: float = float(body.get('tax_rate') or 0)
         withdrawal_start_date: Optional[str] = body.get('withdrawal_start_date') or None
         withdrawal_amount: float = float(body.get('withdrawal_amount') or 0)
 
@@ -695,6 +697,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'statusCode': 400,
                 'headers': CORS_HEADERS,
                 'body': json.dumps({'error': 'annual_fee_pct must be between 0 and 5'})
+            }
+
+        if tax_treatment not in {'none', 'long_term', 'short_term'}:
+            return {
+                'statusCode': 400,
+                'headers': CORS_HEADERS,
+                'body': json.dumps({'error': "tax_treatment must be one of ['none', 'long_term', 'short_term']"})
+            }
+
+        if tax_rate < 0 or tax_rate > 50:
+            return {
+                'statusCode': 400,
+                'headers': CORS_HEADERS,
+                'body': json.dumps({'error': 'tax_rate must be between 0 and 50'})
             }
 
         if withdrawal_amount < 0:
@@ -877,6 +893,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         overall_roi = (total_final_value - total_contributed) / total_contributed if total_contributed > 0 else 0.0
         risk_metrics = compute_risk_metrics(value_history, total_contributed, total_final_value)
+
+        # Simplified capital gains estimate: taxes the whole realized gain at
+        # one flat rate. Real tax treatment is per-lot (each contribution has
+        # its own purchase date and holding period, taxed separately as it's
+        # sold) -- this is an educational approximation, not real tax advice.
+        tax_estimate: Optional[Dict[str, Any]] = None
+        if tax_treatment != 'none' and tax_rate > 0:
+            gain_taxed = max(total_final_value - total_contributed, 0.0)
+            tax_owed = gain_taxed * (tax_rate / 100.0)
+            tax_estimate = {
+                'treatment': tax_treatment,
+                'tax_rate_pct': tax_rate,
+                'gain_taxed': round(gain_taxed, 2),
+                'tax_owed': round(tax_owed, 2),
+                'after_tax_value': round(total_final_value - tax_owed, 2),
+            }
         correlation_matrix = compute_correlation_matrix(ticker_series)
 
         # Honest fee-impact comparison: rerun the identical simulation at 0%
@@ -938,6 +970,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'correlation_matrix': correlation_matrix,
             'annual_fee_pct': annual_fee_pct,
             'fee_comparison': fee_comparison,
+            'tax_estimate': tax_estimate,
             'withdrawal_start_date': withdrawal_start_date,
             'withdrawal_amount': withdrawal_amount,
             'total_withdrawn': round(total_withdrawn, 2),

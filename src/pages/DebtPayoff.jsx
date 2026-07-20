@@ -144,53 +144,101 @@ function DebtPayoff() {
           <FadeInSection delay={0.1}>
             <div className="bg-white rounded-2xl p-8 shadow-lg">
               <h4 className="font-display text-xl font-bold text-navy mb-4">Your Debts</h4>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {debts.map(d => (
-                  <div key={d.id} className="grid grid-cols-12 gap-2 items-center">
-                    <input
-                      type="text"
-                      value={d.name}
-                      onChange={(e) => updateDebt(d.id, 'name', e.target.value)}
-                      className="col-span-4 p-2 rounded-lg border-2 border-cream-dark text-navy text-sm focus:border-teal focus:outline-none"
-                    />
-                    <div className="col-span-3 relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-navy-light text-sm">$</span>
+                  <div key={d.id} className="p-3 md:p-0 border md:border-0 border-cream-dark rounded-xl md:rounded-none">
+                    {/* Name + remove button row, always full width */}
+                    <div className="flex gap-2 items-center mb-2 md:mb-0 md:grid md:grid-cols-12 md:gap-2">
                       <input
-                        type="number"
-                        value={d.balance}
-                        onChange={(e) => updateDebt(d.id, 'balance', e.target.value)}
-                        placeholder="Balance"
-                        className="w-full p-2 pl-5 rounded-lg border-2 border-cream-dark text-navy text-sm focus:border-teal focus:outline-none"
+                        type="text"
+                        value={d.name}
+                        onChange={(e) => updateDebt(d.id, 'name', e.target.value)}
+                        className="flex-1 md:col-span-4 p-2 rounded-lg border-2 border-cream-dark text-navy text-sm focus:border-teal focus:outline-none"
                       />
+                      <button
+                        onClick={() => removeDebt(d.id)}
+                        className="md:hidden text-navy-light hover:text-coral text-lg leading-none px-2"
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                      <div className="hidden md:block md:col-span-3 relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-navy-light text-sm">$</span>
+                        <input
+                          type="number"
+                          value={d.balance}
+                          onChange={(e) => updateDebt(d.id, 'balance', e.target.value)}
+                          placeholder="Balance"
+                          className="w-full p-2 pl-5 rounded-lg border-2 border-cream-dark text-navy text-sm focus:border-teal focus:outline-none"
+                        />
+                      </div>
+                      <div className="hidden md:block md:col-span-2 relative">
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={d.apr}
+                          onChange={(e) => updateDebt(d.id, 'apr', e.target.value)}
+                          placeholder="APR"
+                          className="w-full p-2 pr-5 rounded-lg border-2 border-cream-dark text-navy text-sm focus:border-teal focus:outline-none"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-navy-light text-sm">%</span>
+                      </div>
+                      <div className="hidden md:block md:col-span-2 relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-navy-light text-sm">$</span>
+                        <input
+                          type="number"
+                          value={d.minPayment}
+                          onChange={(e) => updateDebt(d.id, 'minPayment', e.target.value)}
+                          placeholder="Min pay"
+                          className="w-full p-2 pl-5 rounded-lg border-2 border-cream-dark text-navy text-sm focus:border-teal focus:outline-none"
+                        />
+                      </div>
+                      <button
+                        onClick={() => removeDebt(d.id)}
+                        className="hidden md:block md:col-span-1 text-navy-light hover:text-coral text-lg leading-none"
+                        title="Remove"
+                      >
+                        ×
+                      </button>
                     </div>
-                    <div className="col-span-2 relative">
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={d.apr}
-                        onChange={(e) => updateDebt(d.id, 'apr', e.target.value)}
-                        placeholder="APR"
-                        className="w-full p-2 pr-5 rounded-lg border-2 border-cream-dark text-navy text-sm focus:border-teal focus:outline-none"
-                      />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-navy-light text-sm">%</span>
+
+                    {/* Balance/APR/Min payment as labeled fields, mobile only */}
+                    <div className="grid grid-cols-3 gap-2 md:hidden">
+                      <div>
+                        <label className="block text-navy-light text-xs mb-1">Balance</label>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-navy-light text-xs">$</span>
+                          <input
+                            type="number"
+                            value={d.balance}
+                            onChange={(e) => updateDebt(d.id, 'balance', e.target.value)}
+                            className="w-full p-2 pl-4 rounded-lg border-2 border-cream-dark text-navy text-sm focus:border-teal focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-navy-light text-xs mb-1">APR %</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={d.apr}
+                          onChange={(e) => updateDebt(d.id, 'apr', e.target.value)}
+                          className="w-full p-2 rounded-lg border-2 border-cream-dark text-navy text-sm focus:border-teal focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-navy-light text-xs mb-1">Min pay</label>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-navy-light text-xs">$</span>
+                          <input
+                            type="number"
+                            value={d.minPayment}
+                            onChange={(e) => updateDebt(d.id, 'minPayment', e.target.value)}
+                            className="w-full p-2 pl-4 rounded-lg border-2 border-cream-dark text-navy text-sm focus:border-teal focus:outline-none"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div className="col-span-2 relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-navy-light text-sm">$</span>
-                      <input
-                        type="number"
-                        value={d.minPayment}
-                        onChange={(e) => updateDebt(d.id, 'minPayment', e.target.value)}
-                        placeholder="Min pay"
-                        className="w-full p-2 pl-5 rounded-lg border-2 border-cream-dark text-navy text-sm focus:border-teal focus:outline-none"
-                      />
-                    </div>
-                    <button
-                      onClick={() => removeDebt(d.id)}
-                      className="col-span-1 text-navy-light hover:text-coral text-lg leading-none"
-                      title="Remove"
-                    >
-                      ×
-                    </button>
                   </div>
                 ))}
               </div>

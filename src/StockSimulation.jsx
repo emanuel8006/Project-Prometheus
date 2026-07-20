@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { API_BASE_URL, SIMULATION_CONFIG, CATEGORIES, SP500_DATA, FUN_PURCHASES } from './config';
 import { STOCKS_DATA, SECTOR_NAMES } from './stockData';
 import { PortfolioChart, ScenarioComparisonChart } from './components';
-import { getUserData, updatePortfolioFromSimulation } from './supabaseFunctions';
+import { getUserData, updatePortfolioFromSimulation, saveScenario, loadScenarios, deleteScenario, clearScenarios } from './supabaseFunctions';
 
 function formatMarketCap(value) {
   if (!value) return null;
@@ -37,6 +37,8 @@ const StockSimulation = ({ session }) => {
       useWithdrawal: false,
       withdrawalStartDate: '',
       withdrawalAmount: 500,
+      taxTreatment: 'none',
+      taxRate: 15,
     };
   });
   const [selectedCategories, setSelectedCategories] = useState(() => {
@@ -105,6 +107,7 @@ const StockSimulation = ({ session }) => {
   const [crashLoading, setCrashLoading] = useState(false);
   const [crashError, setCrashError] = useState(null);
   const [showCrashModal, setShowCrashModal] = useState(false);
+  const [shareStatus, setShareStatus] = useState(''); // '', 'copied', 'shared', 'error'
 
   // Saved scenarios for side-by-side comparison
   const [savedScenarios, setSavedScenarios] = useState(() => {
@@ -112,10 +115,66 @@ const StockSimulation = ({ session }) => {
     return saved ? JSON.parse(saved) : [];
   });
   const [scenarioLabel, setScenarioLabel] = useState('');
+  const [dbUserId, setDbUserId] = useState(null);
 
   useEffect(() => {
     localStorage.setItem('sim_scenarios', JSON.stringify(savedScenarios));
   }, [savedScenarios]);
+
+  // When signed in, resolve the users-table row and sync saved scenarios
+  // against the DB instead of only this browser's localStorage. Existing
+  // local scenarios from before sign-in get migrated up once, rather than
+  // silently lost.
+  useEffect(() => {
+    if (!session?.user?.email) {
+      setDbUserId(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const userData = await getUserData(session.user.email);
+        if (cancelled || !userData?.id) return;
+        setDbUserId(userData.id);
+
+        const remote = await loadScenarios(userData.id);
+        if (cancelled) return;
+
+        if (remote && remote.length > 0) {
+          setSavedScenarios(remote.map(r => ({
+            id: r.id,
+            label: r.label,
+            invested: r.invested,
+            finalValue: r.final_value,
+            roiPercent: r.roi_percent,
+            sharpe: r.sharpe,
+            maxDrawdown: r.max_drawdown,
+            points: r.points || [],
+          })));
+        } else if (savedScenarios.length > 0) {
+          // Migrate this device's guest-saved scenarios up to the account
+          const migrated = [];
+          for (const s of savedScenarios) {
+            try {
+              const saved = await saveScenario(userData.id, s);
+              migrated.push({ ...s, id: saved.id });
+            } catch {
+              migrated.push(s); // keep local copy if one row fails to migrate
+            }
+          }
+          setSavedScenarios(migrated);
+        }
+      } catch (err) {
+        console.warn('Could not sync scenarios with account:', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // Only re-sync when the signed-in identity changes, not on every scenario edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.email]);
 
   const SCENARIO_COLORS = ['#3D8B8B', '#E8A54B', '#D9534F', '#6B5CA5'];
   const MAX_SCENARIOS = 4;
@@ -127,7 +186,7 @@ const StockSimulation = ({ session }) => {
     return `${tickerList} · ${period} · ${strategy}`;
   };
 
-  const handleSaveScenario = () => {
+  const handleSaveScenario = async () => {
     if (!simulationResult || savedScenarios.length >= MAX_SCENARIOS) return;
     const label = scenarioLabel.trim() || defaultScenarioLabel();
     const newScenario = {
@@ -142,15 +201,31 @@ const StockSimulation = ({ session }) => {
     };
     setSavedScenarios(prev => [...prev, newScenario]);
     setScenarioLabel('');
+
+    if (dbUserId) {
+      try {
+        const saved = await saveScenario(dbUserId, newScenario);
+        // Swap the temporary local id for the real DB id so remove/clear work against it
+        setSavedScenarios(prev => prev.map(s => s.id === newScenario.id ? { ...s, id: saved.id } : s));
+      } catch (err) {
+        console.warn('Could not save scenario to account:', err);
+      }
+    }
   };
 
   const handleRemoveScenario = (id) => {
     setSavedScenarios(prev => prev.filter(s => s.id !== id));
+    if (dbUserId) {
+      deleteScenario(id).catch(err => console.warn('Could not delete scenario from account:', err));
+    }
   };
 
   const handleClearScenarios = () => {
     setSavedScenarios([]);
     localStorage.removeItem('sim_scenarios');
+    if (dbUserId) {
+      clearScenarios(dbUserId).catch(err => console.warn('Could not clear scenarios from account:', err));
+    }
   };
 
   const getAvailableStocks = () => STOCKS_DATA[selectedCategories[currentCategoryIndex]] || [];
@@ -269,6 +344,8 @@ const StockSimulation = ({ session }) => {
           annual_fee_pct: config.annualFeePct || 0,
           withdrawal_start_date: config.useWithdrawal ? config.withdrawalStartDate : null,
           withdrawal_amount: config.useWithdrawal ? config.withdrawalAmount : 0,
+          tax_treatment: config.taxTreatment || 'none',
+          tax_rate: config.taxTreatment !== 'none' ? config.taxRate : 0,
         }),
       });
       const data = await res.json();
@@ -346,6 +423,8 @@ const StockSimulation = ({ session }) => {
       useWithdrawal: false,
       withdrawalStartDate: '',
       withdrawalAmount: 500,
+      taxTreatment: 'none',
+      taxRate: 15,
     });
     setSimulationResult(null);
     // Clear localStorage
@@ -543,6 +622,47 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
       setCrashError(err.message);
     } finally {
       setCrashLoading(false);
+    }
+  };
+
+  const handleShareResults = async () => {
+    const results = getResults();
+    if (!results || !simulationResult) return;
+
+    const allTickers = Object.values(selectedStocks).flat().map(s => s.ticker).join(', ');
+    const period = config.useCustomDates
+      ? `${config.customStartDate} to ${config.customEndDate}`
+      : `${config.year} to now`;
+    const isProfit = results.totalGain >= 0;
+
+    const text = [
+      `📊 Prometheus Simulation Results`,
+      ``,
+      `Picks: ${allTickers}`,
+      `Period: ${period}`,
+      `Invested: $${results.totalInvested.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+      `Now worth: $${results.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+      `${isProfit ? '+' : ''}${results.totalGainPercent.toFixed(1)}% (${isProfit ? '+' : ''}$${results.totalGain.toLocaleString(undefined, { maximumFractionDigits: 0 })})`,
+      ``,
+      `Try it yourself on Prometheus`,
+    ].join('\n');
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'My Prometheus Simulation', text });
+        setShareStatus('shared');
+      } catch (err) {
+        // User cancelled the native share sheet -- not a real error, stay quiet
+        if (err.name !== 'AbortError') setShareStatus('error');
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(text);
+        setShareStatus('copied');
+        setTimeout(() => setShareStatus(''), 2500);
+      } catch (err) {
+        setShareStatus('error');
+      }
     }
   };
 
@@ -937,6 +1057,46 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
                       />
                     </div>
                   </div>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-navy font-medium mb-2">Capital Gains Tax Estimate (optional)</label>
+              <p className="text-navy-light text-sm mb-3">
+                Estimate what you'd owe on the gain when you sell. This is a simplified flat-rate estimate, not real per-lot tax accounting or tax advice.
+              </p>
+              <div className="flex gap-2 mb-3">
+                {[
+                  { label: 'None', value: 'none' },
+                  { label: 'Long-Term (held 1yr+)', value: 'long_term' },
+                  { label: 'Short-Term (held <1yr)', value: 'short_term' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setConfig({ ...config, taxTreatment: opt.value, taxRate: opt.value === 'short_term' ? 24 : 15 })}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      config.taxTreatment === opt.value ? 'bg-teal text-white' : 'bg-cream-dark text-navy hover:bg-teal/20'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {config.taxTreatment !== 'none' && (
+                <div className="flex flex-wrap gap-2">
+                  {(config.taxTreatment === 'long_term' ? [0, 15, 20] : [12, 22, 24, 32, 35, 37]).map(rate => (
+                    <button
+                      key={rate}
+                      onClick={() => setConfig({ ...config, taxRate: rate })}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                        config.taxRate === rate ? 'bg-navy text-white' : 'bg-cream-dark text-navy hover:bg-teal/20'
+                      }`}
+                    >
+                      {rate}%
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
@@ -1404,6 +1564,12 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
               Rebalanced back to equal weight {results.rebalanceCount} time{results.rebalanceCount !== 1 ? 's' : ''} along the way.
             </p>
           )}
+          <button
+            onClick={handleShareResults}
+            className="mt-4 inline-flex items-center gap-2 px-5 py-2 bg-white text-navy rounded-lg font-semibold text-sm hover:bg-cream-dark transition-colors shadow"
+          >
+            {shareStatus === 'copied' ? '✓ Copied to clipboard' : shareStatus === 'shared' ? '✓ Shared' : '📤 Share These Results'}
+          </button>
         </div>
 
         {/* Panic Sell Comparison */}
@@ -1633,6 +1799,36 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
           </div>
         )}
 
+        {/* Capital Gains Tax Estimate */}
+        {simulationResult.tax_estimate && (
+          <div className="rounded-2xl p-8 bg-navy/5 border-2 border-navy/20">
+            <h4 className="font-display text-xl font-bold text-navy mb-1">🏛️ Capital Gains Tax Estimate</h4>
+            <p className="text-navy-light text-sm mb-6">
+              Simplified estimate at a flat {simulationResult.tax_estimate.tax_rate_pct}% {simulationResult.tax_estimate.treatment === 'long_term' ? 'long-term capital gains' : 'short-term (ordinary income)'} rate on the gain — not real per-lot tax accounting, and not tax advice.
+            </p>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="p-4 bg-white rounded-xl text-center">
+                <p className="text-navy-light text-sm mb-1">Gain Taxed</p>
+                <p className="font-display text-xl font-bold text-navy">
+                  ${simulationResult.tax_estimate.gain_taxed.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+              <div className="p-4 bg-white rounded-xl text-center">
+                <p className="text-navy-light text-sm mb-1">Estimated Tax Owed</p>
+                <p className="font-display text-xl font-bold text-coral">
+                  ${simulationResult.tax_estimate.tax_owed.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+              <div className="p-4 bg-white rounded-xl text-center">
+                <p className="text-navy-light text-sm mb-1">After-Tax Value</p>
+                <p className="font-display text-xl font-bold text-sage">
+                  ${simulationResult.tax_estimate.after_tax_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Fee Drag Comparison */}
         {simulationResult.fee_comparison && (
           <div className="rounded-2xl p-8 bg-amber/10 border-2 border-amber">
@@ -1693,8 +1889,11 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
         {/* Save & Compare Scenarios */}
         <div className="bg-white rounded-2xl p-8 shadow-lg">
           <h4 className="font-display text-xl font-bold text-navy mb-1">⚖️ Save & Compare Scenarios</h4>
-          <p className="text-navy-light text-sm mb-6">
+          <p className="text-navy-light text-sm mb-2">
             Save this run, then try different picks or a different period, and compare them side by side.
+          </p>
+          <p className="text-navy-light text-xs mb-6">
+            {dbUserId ? '✓ Synced to your account — available on any device' : 'Saved to this browser only — sign in to sync across devices'}
           </p>
 
           {savedScenarios.length < MAX_SCENARIOS ? (

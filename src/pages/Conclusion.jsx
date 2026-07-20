@@ -8,6 +8,7 @@ const TOOLS = [
   { path: '/monte-carlo', label: 'Monte Carlo Simulator', emoji: '🎲' },
   { path: '/options-payoff', label: 'Options Payoff Visualizer', emoji: '⚡' },
   { path: '/algo-backtester', label: 'Strategy Backtester', emoji: '🤖' },
+  { path: '/life-path', label: 'Life Path Simulator', emoji: '🧭' },
 ];
 
 function Conclusion({ totalCorrect, totalAnswered }) {

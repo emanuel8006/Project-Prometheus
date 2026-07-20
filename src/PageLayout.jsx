@@ -14,6 +14,7 @@ const modules = [
   { path: '/monte-carlo', name: 'Monte Carlo', short: '🎲', questions: 0, prefix: null },
   { path: '/options-payoff', name: 'Options Payoff', short: '⚡', questions: 0, prefix: null },
   { path: '/algo-backtester', name: 'Backtester', short: '🤖', questions: 0, prefix: null },
+  { path: '/life-path', name: 'Life Path', short: '🧭', questions: 0, prefix: null },
   { path: '/conclusion', name: 'Conclusion', short: '✓', questions: 0, prefix: null },
 ];
 

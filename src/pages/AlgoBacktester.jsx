@@ -343,8 +343,8 @@ function AlgoBacktester() {
           <PageNavigation
             prevPath="/options-payoff"
             prevLabel="Options Payoff"
-            nextPath="/conclusion"
-            nextLabel="See Conclusion"
+            nextPath="/life-path"
+            nextLabel="Life Path Simulator"
           />
         </div>
       </div>

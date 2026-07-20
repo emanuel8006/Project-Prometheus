@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
+import { createUserAndPortfolio, getUserData, saveProgress, loadProgress } from './supabaseFunctions';
 import { Storage } from './utils';
 import { metrics, psychologyTopics, beginnerMistakes, foundationsTopics, advancedTopics } from './educationalData';
 import { TopNav } from './PageLayout';
 
 import Home from './pages/Home';
+import StartHere from './pages/StartHere';
 import Module1 from './pages/Module1';
 import Module2 from './pages/Module2';
 import Module3 from './pages/Module3';
@@ -17,6 +19,7 @@ import DebtPayoff from './pages/DebtPayoff';
 import MonteCarlo from './pages/MonteCarlo';
 import OptionsPayoff from './pages/OptionsPayoff';
 import AlgoBacktester from './pages/AlgoBacktester';
+import LifePathSimulator from './pages/LifePathSimulator';
 import Conclusion from './pages/Conclusion';
 import SignInModal from './pages/SignInModal';
 import SignUpModal from './pages/SignUpModal';
@@ -65,9 +68,13 @@ function App() {
     Storage.clear('quizScores');
     Storage.clear('totalCorrect');
     Storage.clear('totalAnswered');
+    if (dbUserId) {
+      saveProgress(dbUserId, {}, 0, 0).catch(err => console.warn('Could not reset progress in account:', err));
+    }
   };
 
   const [session, setSession] = useState(null);
+  const [dbUserId, setDbUserId] = useState(null);
   const [signInModalOpen, setSignInModalOpen] = useState(false);
   const [signUpModalOpen, setSignUpModalOpen] = useState(false);
   const { pathname } = useLocation();
@@ -84,6 +91,63 @@ function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // When signed in, resolve the users-table row (same one used for the
+  // leaderboard/portfolio) and sync quiz progress against it -- the DB
+  // becomes the source of truth once signed in, but a guest's existing
+  // localStorage progress is migrated up on first sign-in instead of lost.
+  useEffect(() => {
+    if (!session?.user?.email) {
+      setDbUserId(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const email = session.user.email;
+        const username = session.user.user_metadata?.username;
+        await createUserAndPortfolio(email, username || undefined);
+        const userData = await getUserData(email);
+        if (cancelled || !userData?.id) return;
+        setDbUserId(userData.id);
+
+        const remoteProgress = await loadProgress(userData.id);
+        if (cancelled) return;
+
+        const hasRemoteProgress = remoteProgress && remoteProgress.total_answered > 0;
+        const hasLocalProgress = totalAnswered > 0;
+
+        if (hasRemoteProgress) {
+          // DB progress exists (this device or another) -- it wins.
+          setQuizScores(remoteProgress.quiz_scores || {});
+          setTotalCorrect(remoteProgress.total_correct || 0);
+          setTotalAnswered(remoteProgress.total_answered || 0);
+        } else if (hasLocalProgress) {
+          // First sign-in with existing guest progress on this device --
+          // push it up instead of silently discarding it.
+          await saveProgress(userData.id, quizScores, totalCorrect, totalAnswered);
+        }
+      } catch (err) {
+        console.warn('Could not sync progress with account:', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // Deliberately only re-run when the session's user identity changes,
+    // not on every quizScores update (that's handled by the save effect below).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.email]);
+
+  // Save to the DB whenever progress changes, once signed in
+  useEffect(() => {
+    if (!dbUserId) return;
+    saveProgress(dbUserId, quizScores, totalCorrect, totalAnswered).catch(err =>
+      console.warn('Could not save progress to account:', err)
+    );
+  }, [dbUserId, quizScores, totalCorrect, totalAnswered]);
+
 
   // When visiting /login, open sign-in modal and go home
   useEffect(() => {
@@ -136,6 +200,7 @@ function App() {
       />
       <Routes>
         <Route path="/" element={<Home totalQuizzes={totalQuizzes} />} />
+        <Route path="/start" element={<StartHere />} />
         <Route path="/module/1" element={
           <Module1 
             onQuizComplete={handleQuizComplete} 
@@ -177,6 +242,7 @@ function App() {
         <Route path="/monte-carlo" element={<MonteCarlo />} />
         <Route path="/options-payoff" element={<OptionsPayoff />} />
         <Route path="/algo-backtester" element={<AlgoBacktester />} />
+        <Route path="/life-path" element={<LifePathSimulator />} />
         <Route path="/conclusion" element={
           <Conclusion 
             totalCorrect={totalCorrect}

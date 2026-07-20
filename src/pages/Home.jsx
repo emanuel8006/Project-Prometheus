@@ -56,9 +56,20 @@ function Home({ totalQuizzes }) {
             </a>
           </FadeInSection>
 
+          <FadeInSection delay={0.7}>
+            <div className="mt-6 text-right">
+              <Link
+                to="/start"
+                className="text-emerald-400 hover:text-emerald-300 font-medium underline underline-offset-4"
+              >
+                Not sure where to begin? Take our 1-minute quiz →
+              </Link>
+            </div>
+          </FadeInSection>
+
           <FadeInSection delay={0.8}>
             <div className="mt-20 flex flex-wrap justify-end gap-8 text-white">
-              <div>3 Modules</div>
+              <div>5 Modules</div>
               <div>{totalQuizzes} Questions</div>
               <div>~30 min</div>
             </div>
@@ -169,6 +180,17 @@ function Home({ totalQuizzes }) {
                   Let's start.
                   <span className="text-xl">💭</span>
                 </a>
+              </FadeInSection>
+
+              <FadeInSection delay={0.7}>
+                <p className="mt-4">
+                  <Link
+                    to="/start"
+                    className="text-amber hover:text-amber/80 font-medium underline underline-offset-4"
+                  >
+                    Not sure where to start? Answer a few questions →
+                  </Link>
+                </p>
               </FadeInSection>
             </div>
 

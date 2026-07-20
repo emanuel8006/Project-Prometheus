@@ -293,3 +293,108 @@ export async function getHoldings(portfolioId) {
     throw error;
   }
 }
+
+// SAVE QUIZ PROGRESS (upsert -- one row per user, keyed by users.id)
+export async function saveProgress(userId, quizScores, totalCorrect, totalAnswered) {
+  try {
+    const { error } = await supabase
+      .from('user_progress')
+      .upsert({
+        user_id: userId,
+        quiz_scores: quizScores,
+        total_correct: totalCorrect,
+        total_answered: totalAnswered,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' });
+
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving progress:', error);
+    throw error;
+  }
+}
+
+// LOAD QUIZ PROGRESS -- returns null if this user has never saved any
+export async function loadProgress(userId) {
+  try {
+    const { data, error } = await supabase
+      .from('user_progress')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error loading progress:', error);
+    throw error;
+  }
+}
+
+// SAVE A SIMULATION SCENARIO
+export async function saveScenario(userId, scenario) {
+  try {
+    const { data, error } = await supabase
+      .from('saved_scenarios')
+      .insert({
+        user_id: userId,
+        label: scenario.label,
+        invested: scenario.invested,
+        final_value: scenario.finalValue,
+        roi_percent: scenario.roiPercent,
+        sharpe: scenario.sharpe,
+        max_drawdown: scenario.maxDrawdown,
+        points: scenario.points,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error saving scenario:', error);
+    throw error;
+  }
+}
+
+// LOAD ALL SAVED SCENARIOS FOR A USER, oldest first (matches display order)
+export async function loadScenarios(userId) {
+  try {
+    const { data, error } = await supabase
+      .from('saved_scenarios')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error loading scenarios:', error);
+    throw error;
+  }
+}
+
+// DELETE ONE SAVED SCENARIO
+export async function deleteScenario(scenarioId) {
+  try {
+    const { error } = await supabase.from('saved_scenarios').delete().eq('id', scenarioId);
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting scenario:', error);
+    throw error;
+  }
+}
+
+// CLEAR ALL SAVED SCENARIOS FOR A USER
+export async function clearScenarios(userId) {
+  try {
+    const { error } = await supabase.from('saved_scenarios').delete().eq('user_id', userId);
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    console.error('Error clearing scenarios:', error);
+    throw error;
+  }
+}
