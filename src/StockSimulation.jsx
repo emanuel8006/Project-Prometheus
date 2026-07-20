@@ -666,6 +666,44 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
     }
   };
 
+  const handleExportCsv = () => {
+    if (!simulationResult) return;
+
+    const rows = [];
+    rows.push(['Metric', 'Value']);
+    rows.push(['Tickers', Object.values(selectedStocks).flat().map(s => s.ticker).join(' + ')]);
+    rows.push(['Start Date', simulationResult.start_date || config.year]);
+    rows.push(['End Date', simulationResult.end_date || 'now']);
+    rows.push(['Strategy', config.investmentStrategy === 'dca' ? 'Dollar-Cost Averaging' : 'Lump Sum']);
+    rows.push(['Total Invested', simulationResult.total_contributed ?? simulationResult.starting_cash]);
+    rows.push(['Final Value', simulationResult.final_cash]);
+    rows.push(['ROI %', simulationResult.roi_percent]);
+    if (simulationResult.risk_metrics) {
+      rows.push(['Annualized Return %', simulationResult.risk_metrics.annualized_return_pct]);
+      rows.push(['Annualized Volatility %', simulationResult.risk_metrics.annualized_volatility_pct]);
+      rows.push(['Sharpe Ratio', simulationResult.risk_metrics.sharpe_ratio]);
+      rows.push(['Max Drawdown %', simulationResult.risk_metrics.max_drawdown_pct]);
+    }
+    rows.push([]);
+    rows.push(['Month-by-Month Value History']);
+    rows.push(['Date', 'Value']);
+    (simulationResult.value_history || []).forEach(pt => rows.push([pt.date, pt.value]));
+
+    const csvContent = rows
+      .map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `prometheus-simulation-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Filter and search stocks — numeric filters use liveStats since stockData has no metrics
   const filteredStocks = useMemo(() => {
     let stocks = getAvailableStocks();
@@ -1564,12 +1602,20 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
               Rebalanced back to equal weight {results.rebalanceCount} time{results.rebalanceCount !== 1 ? 's' : ''} along the way.
             </p>
           )}
-          <button
-            onClick={handleShareResults}
-            className="mt-4 inline-flex items-center gap-2 px-5 py-2 bg-white text-navy rounded-lg font-semibold text-sm hover:bg-cream-dark transition-colors shadow"
-          >
-            {shareStatus === 'copied' ? '✓ Copied to clipboard' : shareStatus === 'shared' ? '✓ Shared' : '📤 Share These Results'}
-          </button>
+          <div className="flex flex-wrap justify-center gap-2 mt-4">
+            <button
+              onClick={handleShareResults}
+              className="inline-flex items-center gap-2 px-5 py-2 bg-white text-navy rounded-lg font-semibold text-sm hover:bg-cream-dark transition-colors shadow"
+            >
+              {shareStatus === 'copied' ? '✓ Copied to clipboard' : shareStatus === 'shared' ? '✓ Shared' : '📤 Share These Results'}
+            </button>
+            <button
+              onClick={handleExportCsv}
+              className="inline-flex items-center gap-2 px-5 py-2 bg-white text-navy rounded-lg font-semibold text-sm hover:bg-cream-dark transition-colors shadow"
+            >
+              📥 Download CSV
+            </button>
+          </div>
         </div>
 
         {/* Panic Sell Comparison */}

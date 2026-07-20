@@ -80,17 +80,33 @@ function simulatePayoff(debts, extraPayment, strategy) {
 function DebtPayoff() {
   const [debts, setDebts] = useState(DEFAULT_DEBTS);
   const [extraPayment, setExtraPayment] = useState(150);
+  const [history, setHistory] = useState([]); // undo stack of previous `debts` snapshots
+
+  const pushHistory = () => {
+    setHistory(prev => [...prev.slice(-19), debts]); // cap at 20 undo steps
+  };
 
   const updateDebt = (id, field, value) => {
     setDebts(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
   };
 
   const addDebt = () => {
+    pushHistory();
     setDebts(prev => [...prev, { id: Date.now(), name: `Debt ${prev.length + 1}`, balance: 1000, apr: 15, minPayment: 25 }]);
   };
 
   const removeDebt = (id) => {
+    pushHistory();
     setDebts(prev => prev.filter(d => d.id !== id));
+  };
+
+  const handleUndo = () => {
+    setHistory(prev => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      setDebts(last);
+      return prev.slice(0, -1);
+    });
   };
 
   const totalMinPayments = debts.reduce((s, d) => s + (parseFloat(d.minPayment) || 0), 0);
@@ -243,12 +259,22 @@ function DebtPayoff() {
                 ))}
               </div>
               <div className="flex items-center justify-between mt-4">
-                <button
-                  onClick={addDebt}
-                  className="text-teal hover:text-teal-light text-sm font-medium"
-                >
-                  + Add another debt
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={addDebt}
+                    className="text-teal hover:text-teal-light text-sm font-medium"
+                  >
+                    + Add another debt
+                  </button>
+                  {history.length > 0 && (
+                    <button
+                      onClick={handleUndo}
+                      className="text-navy-light hover:text-navy text-sm font-medium"
+                    >
+                      ↶ Undo
+                    </button>
+                  )}
+                </div>
                 <p className="text-navy-light text-sm">
                   Total balance: <span className="font-semibold text-navy">${totalBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                   {' '}· Min payments: <span className="font-semibold text-navy">${totalMinPayments.toLocaleString(undefined, { maximumFractionDigits: 0 })}/mo</span>

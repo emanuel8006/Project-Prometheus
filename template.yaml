@@ -67,3 +67,24 @@ Resources:
           Properties:
             Path: /simulate
             Method: post
+
+  BacktestStrategyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/backtest_strategy/
+      Handler: app.lambda_handler
+      Runtime: python3.13
+      Architectures:
+        - x86_64
+      Timeout: 90
+      Events:
+        BacktestStrategy:
+          Type: Api
+          Properties:
+            Path: /backtest
+            Method: post
+
+Outputs:
+  ApiBaseUrl:
+    Description: "Base URL for the deployed API -- this is what goes in VITE_API_BASE_URL"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"

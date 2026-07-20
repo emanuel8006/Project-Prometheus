@@ -234,6 +234,19 @@ function AlgoBacktester() {
             </div>
           </FadeInSection>
 
+          {loading && !result && (
+            <FadeInSection delay={0.1}>
+              <div className="bg-white rounded-2xl p-6 shadow-lg animate-pulse" aria-busy="true" aria-label="Running backtest">
+                <div className="h-6 bg-cream-dark rounded w-1/3 mb-4"></div>
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  <div className="h-24 bg-cream-dark rounded-xl"></div>
+                  <div className="h-24 bg-cream-dark rounded-xl"></div>
+                </div>
+                <div className="h-48 bg-cream-dark rounded-xl"></div>
+              </div>
+            </FadeInSection>
+          )}
+
           {result && (
             <>
               <FadeInSection delay={0.1}>

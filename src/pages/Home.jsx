@@ -1,8 +1,35 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FadeInSection } from '../components';
+import { API_BASE_URL } from '../config';
 import Animation from './Animation';
 
 function Home({ totalQuizzes }) {
+  const [spyQuote, setSpyQuote] = useState(null);
+  const [spyError, setSpyError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE_URL}/stats?symbol=SPY`)
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled || data?.error) return;
+        // Different yfinance fields carry the current price depending on
+        // market state; try the common ones in order of reliability.
+        const price = data.regularMarketPrice ?? data.currentPrice ?? data.previousClose ?? null;
+        const prevClose = data.previousClose ?? null;
+        if (price != null) {
+          const change = prevClose != null ? price - prevClose : null;
+          const changePct = prevClose != null && prevClose !== 0 ? (change / prevClose) * 100 : null;
+          setSpyQuote({ price, change, changePct });
+        } else {
+          setSpyError(true);
+        }
+      })
+      .catch(() => { if (!cancelled) setSpyError(true); });
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div className="min-h-screen bg-slate-900">
       {/* Hero Section */}
@@ -38,7 +65,7 @@ function Home({ totalQuizzes }) {
           
           <FadeInSection delay={0.4}>
             <p className="text-xl md:text-2xl text-cream max-w-2xl ml-auto mb-12 text-right">
-              Around 62% of Gen Z is not finanically literate.
+              Around 62% of Gen Z is not financially literate.
               
               <span className= "block text-emerald-400"> Together, we can change that. </span>
               <span className= "block text-cream"> For free.</span>
@@ -74,6 +101,22 @@ function Home({ totalQuizzes }) {
               <div>~30 min</div>
             </div>
           </FadeInSection>
+
+          {spyQuote && (
+            <FadeInSection delay={0.9}>
+              <div className="mt-6 flex justify-end">
+                <div className="inline-flex items-center gap-3 bg-white/10 backdrop-blur px-4 py-2 rounded-full text-sm">
+                  <span className="text-cream/70">S&P 500 right now</span>
+                  <span className="font-semibold text-white">${spyQuote.price.toFixed(2)}</span>
+                  {spyQuote.changePct != null && (
+                    <span className={spyQuote.changePct >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                      {spyQuote.changePct >= 0 ? '▲' : '▼'} {Math.abs(spyQuote.changePct).toFixed(2)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+            </FadeInSection>
+          )}
 
         </div>
       </section>
@@ -173,13 +216,13 @@ function Home({ totalQuizzes }) {
 
             <div className="container mx-auto px-6 py-20 text-center relative z-10">
               <FadeInSection delay={0.6}>
-                <a 
-                  href="./module/1"
+                <Link
+                  to="/module/1"
                   className="inline-flex items-center gap-3 bg-teal text-cream px-8 py-4 rounded-full font-semibold text-lg text-center hover:bg-emerald-400 transition-colors shadow-lg hover:shadow-xl"
                 >
                   Let's start.
                   <span className="text-xl">💭</span>
-                </a>
+                </Link>
               </FadeInSection>
 
               <FadeInSection delay={0.7}>

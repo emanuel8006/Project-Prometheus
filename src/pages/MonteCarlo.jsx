@@ -260,6 +260,20 @@ function MonteCarlo() {
             </div>
           </FadeInSection>
 
+          {running && !result && (
+            <FadeInSection delay={0.1}>
+              <div className="bg-white rounded-2xl p-6 shadow-lg animate-pulse" aria-busy="true" aria-label="Running simulation">
+                <div className="h-6 bg-cream-dark rounded w-1/3 mb-4"></div>
+                <div className="grid md:grid-cols-3 gap-4 mb-4">
+                  <div className="h-20 bg-cream-dark rounded-2xl"></div>
+                  <div className="h-20 bg-cream-dark rounded-2xl"></div>
+                  <div className="h-20 bg-cream-dark rounded-2xl"></div>
+                </div>
+                <div className="h-56 bg-cream-dark rounded-xl"></div>
+              </div>
+            </FadeInSection>
+          )}
+
           {result && (
             <>
               <FadeInSection delay={0.15}>

@@ -207,10 +207,10 @@ export const Quiz = ({ quiz, onComplete, soundEnabled = true, answered = false, 
           )}
         </div>
       </div>
-      <p className="text-navy mb-6 font-medium">{quiz.question}</p>
-      <div className="space-y-3">
+      <p className="text-navy mb-6 font-medium" id={`quiz-question-${quiz.question.slice(0, 20).replace(/\s/g, '-')}`}>{quiz.question}</p>
+      <div className="space-y-3" role="radiogroup" aria-label={quiz.question}>
         {quiz.options.map((option, index) => {
-          let optionClass = "quiz-option border-2 border-cream-dark p-4 rounded-xl";
+          let optionClass = "quiz-option border-2 border-cream-dark p-4 rounded-xl w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-teal";
           if (!answered) optionClass += " cursor-pointer";
           
           if (showResult) {
@@ -221,28 +221,41 @@ export const Quiz = ({ quiz, onComplete, soundEnabled = true, answered = false, 
             }
           }
 
+          const isCorrectAnswer = showResult && index === quiz.correct;
+          const isWrongSelection = showResult && index === selected && index !== quiz.correct;
+          const optionLabel = `${String.fromCharCode(65 + index)}. ${option}${isCorrectAnswer ? ' (correct answer)' : isWrongSelection ? ' (your answer, incorrect)' : ''}`;
+
           return (
-            <div
+            <button
               key={index}
+              type="button"
+              role="radio"
+              aria-checked={selected === index}
+              aria-label={optionLabel}
               className={optionClass}
               onClick={() => !answered && handleSelect(index)}
+              disabled={answered && showResult}
             >
               <div className="flex items-center gap-3">
                 <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${
                   showResult && index === quiz.correct ? 'bg-sage text-white' :
                   showResult && index === selected && index !== quiz.correct ? 'bg-coral text-white' :
                   'bg-cream-dark text-navy'
-                }`}>
+                }`} aria-hidden="true">
                   {String.fromCharCode(65 + index)}
                 </span>
                 <span className="text-navy">{option}</span>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
       {showResult && (
-        <div className={`mt-6 p-4 rounded-xl ${quiz.correct === selected || (answered && wasCorrect) ? 'bg-sage/20' : 'bg-amber/20'}`}>
+        <div
+          className={`mt-6 p-4 rounded-xl ${quiz.correct === selected || (answered && wasCorrect) ? 'bg-sage/20' : 'bg-amber/20'}`}
+          role="status"
+          aria-live="polite"
+        >
           <p className="font-semibold text-navy mb-1">
             {(answered && wasCorrect) || quiz.correct === selected ? '✓ Correct!' : '✗ Not quite'}
           </p>
@@ -364,7 +377,13 @@ export const PortfolioChart = ({ startYear, endYear, startValue, endValue, compa
     <div ref={chartRef} className="bg-white rounded-2xl p-6 shadow-lg">
       <h4 className="font-display text-xl font-bold text-navy mb-4">📈 Portfolio Growth Over Time</h4>
 
-      <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible" role="img" aria-labelledby="portfolio-chart-title portfolio-chart-desc">
+        <title id="portfolio-chart-title">Portfolio growth over time</title>
+        <desc id="portfolio-chart-desc">
+          {hasRealHistory
+            ? `Your portfolio went from $${portfolioData[0].toLocaleString(undefined, { maximumFractionDigits: 0 })} to $${portfolioData[portfolioData.length - 1].toLocaleString(undefined, { maximumFractionDigits: 0 })}${hasRealBenchmark ? `, compared to the S&P 500's result of $${sp500Data[sp500Data.length - 1].toLocaleString(undefined, { maximumFractionDigits: 0 })}` : ''}.`
+            : 'Estimated portfolio growth chart.'}
+        </desc>
         {[0, 0.5, 1].map((pct, i) => {
           const y = padding + pct * chartHeight;
           const value = maxValue - pct * (maxValue - minValue);
@@ -476,7 +495,11 @@ export const ScenarioComparisonChart = ({ scenarios }) => {
         Each line is real simulated data, aligned by months since that scenario's own start (not calendar date), since scenarios can cover different periods.
       </p>
 
-      <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible" role="img" aria-labelledby="scenario-chart-title scenario-chart-desc">
+        <title id="scenario-chart-title">Comparison of saved simulation scenarios</title>
+        <desc id="scenario-chart-desc">
+          {validScenarios.map(s => `${s.label}: ended at $${s.points[s.points.length - 1].value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`).join('. ')}
+        </desc>
         {[0, 0.5, 1].map((pct, i) => {
           const y = padding + pct * chartHeight;
           const value = maxValue - pct * (maxValue - minValue);

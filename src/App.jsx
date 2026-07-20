@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { Analytics } from '@vercel/analytics/react';
 import { supabase } from './supabaseClient';
 import { createUserAndPortfolio, getUserData, saveProgress, loadProgress } from './supabaseFunctions';
 import { Storage } from './utils';
@@ -24,6 +25,7 @@ import Conclusion from './pages/Conclusion';
 import SignInModal from './pages/SignInModal';
 import SignUpModal from './pages/SignUpModal';
 import Dashboard from './pages/Dashboard';
+import ErrorBoundary from './pages/ErrorBoundary';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -176,6 +178,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-cream">
+      <Analytics />
       <ScrollToTop />
       <TopNav 
         soundEnabled={soundEnabled}
@@ -199,59 +202,71 @@ function App() {
         onSuccess={onAuthSuccess}
       />
       <Routes>
-        <Route path="/" element={<Home totalQuizzes={totalQuizzes} />} />
-        <Route path="/start" element={<StartHere />} />
+        <Route path="/" element={<ErrorBoundary title="Something went wrong on the home page"><Home totalQuizzes={totalQuizzes} /></ErrorBoundary>} />
+        <Route path="/start" element={<ErrorBoundary title="Something went wrong with the starting quiz"><StartHere /></ErrorBoundary>} />
         <Route path="/module/1" element={
-          <Module1 
-            onQuizComplete={handleQuizComplete} 
-            soundEnabled={soundEnabled}
-            quizScores={quizScores}
-          />
+          <ErrorBoundary title="Something went wrong in this module">
+            <Module1 
+              onQuizComplete={handleQuizComplete} 
+              soundEnabled={soundEnabled}
+              quizScores={quizScores}
+            />
+          </ErrorBoundary>
         } />
         <Route path="/module/2" element={
-          <Module2 
-            onQuizComplete={handleQuizComplete} 
-            soundEnabled={soundEnabled}
-            quizScores={quizScores}
-          />
+          <ErrorBoundary title="Something went wrong in this module">
+            <Module2 
+              onQuizComplete={handleQuizComplete} 
+              soundEnabled={soundEnabled}
+              quizScores={quizScores}
+            />
+          </ErrorBoundary>
         } />
         <Route path="/module/3" element={
-          <Module3 
-            onQuizComplete={handleQuizComplete} 
-            soundEnabled={soundEnabled}
-            quizScores={quizScores}
-          />
+          <ErrorBoundary title="Something went wrong in this module">
+            <Module3 
+              onQuizComplete={handleQuizComplete} 
+              soundEnabled={soundEnabled}
+              quizScores={quizScores}
+            />
+          </ErrorBoundary>
         } />
         <Route path="/module/4" element={
-          <Module4
-            onQuizComplete={handleQuizComplete}
-            soundEnabled={soundEnabled}
-            quizScores={quizScores}
-          />
+          <ErrorBoundary title="Something went wrong in this module">
+            <Module4
+              onQuizComplete={handleQuizComplete}
+              soundEnabled={soundEnabled}
+              quizScores={quizScores}
+            />
+          </ErrorBoundary>
         } />
         <Route path="/module/5" element={
-          <Module5
-            onQuizComplete={handleQuizComplete}
-            soundEnabled={soundEnabled}
-            quizScores={quizScores}
-          />
+          <ErrorBoundary title="Something went wrong in this module">
+            <Module5
+              onQuizComplete={handleQuizComplete}
+              soundEnabled={soundEnabled}
+              quizScores={quizScores}
+            />
+          </ErrorBoundary>
         } />
-        <Route path="/simulation" element={<Simulation session={session} />} />
-        <Route path="/goal-planner" element={<GoalPlanner />} />
-        <Route path="/debt-payoff" element={<DebtPayoff />} />
-        <Route path="/monte-carlo" element={<MonteCarlo />} />
-        <Route path="/options-payoff" element={<OptionsPayoff />} />
-        <Route path="/algo-backtester" element={<AlgoBacktester />} />
-        <Route path="/life-path" element={<LifePathSimulator />} />
+        <Route path="/simulation" element={<ErrorBoundary title="Something went wrong with the simulator"><Simulation session={session} /></ErrorBoundary>} />
+        <Route path="/goal-planner" element={<ErrorBoundary title="Something went wrong with the Goal Planner"><GoalPlanner /></ErrorBoundary>} />
+        <Route path="/debt-payoff" element={<ErrorBoundary title="Something went wrong with the Debt Payoff Calculator"><DebtPayoff /></ErrorBoundary>} />
+        <Route path="/monte-carlo" element={<ErrorBoundary title="Something went wrong with the Monte Carlo simulator"><MonteCarlo /></ErrorBoundary>} />
+        <Route path="/options-payoff" element={<ErrorBoundary title="Something went wrong with the Options Payoff Visualizer"><OptionsPayoff /></ErrorBoundary>} />
+        <Route path="/algo-backtester" element={<ErrorBoundary title="Something went wrong with the Strategy Backtester"><AlgoBacktester /></ErrorBoundary>} />
+        <Route path="/life-path" element={<ErrorBoundary title="Something went wrong with the Life Path Simulator"><LifePathSimulator /></ErrorBoundary>} />
         <Route path="/conclusion" element={
-          <Conclusion 
-            totalCorrect={totalCorrect}
-            totalAnswered={totalAnswered}
-          />
+          <ErrorBoundary title="Something went wrong on this page">
+            <Conclusion 
+              totalCorrect={totalCorrect}
+              totalAnswered={totalAnswered}
+            />
+          </ErrorBoundary>
         } />
         <Route path="/login" element={null} />
         <Route path="/dashboard" element={
-          session ? <Dashboard session={session} /> : null
+          session ? <ErrorBoundary title="Something went wrong on your dashboard"><Dashboard session={session} /></ErrorBoundary> : null
         } />
       </Routes>
     </div>

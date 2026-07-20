@@ -63,6 +63,11 @@ function LifePathSimulator() {
     { id: 1, label: 'Buy a house (down payment)', age: 32, amount: -60000 },
     { id: 2, label: 'Have a kid', age: 30, amount: -15000 },
   ]);
+  const [eventHistory, setEventHistory] = useState([]); // undo stack
+
+  const pushEventHistory = () => {
+    setEventHistory(prev => [...prev.slice(-19), lifeEvents]);
+  };
 
   const applyCareerPreset = (index) => {
     setCareerPresetIndex(index);
@@ -75,11 +80,22 @@ function LifePathSimulator() {
   };
 
   const addEvent = () => {
+    pushEventHistory();
     setLifeEvents(prev => [...prev, { id: Date.now(), label: 'New event', age: currentAge + 5, amount: -10000 }]);
   };
 
   const removeEvent = (id) => {
+    pushEventHistory();
     setLifeEvents(prev => prev.filter(e => e.id !== id));
+  };
+
+  const handleUndoEvent = () => {
+    setEventHistory(prev => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      setLifeEvents(last);
+      return prev.slice(0, -1);
+    });
   };
 
   const result = useMemo(() => {
@@ -268,9 +284,16 @@ function LifePathSimulator() {
                   </div>
                 ))}
               </div>
-              <button onClick={addEvent} className="text-teal hover:text-teal-light text-sm font-medium">
-                + Add a life event
-              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={addEvent} className="text-teal hover:text-teal-light text-sm font-medium">
+                  + Add a life event
+                </button>
+                {eventHistory.length > 0 && (
+                  <button onClick={handleUndoEvent} className="text-navy-light hover:text-navy text-sm font-medium">
+                    ↶ Undo
+                  </button>
+                )}
+              </div>
             </div>
           </FadeInSection>
 
