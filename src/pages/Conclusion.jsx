@@ -9,6 +9,7 @@ const TOOLS = [
   { path: '/options-payoff', label: 'Options Payoff Visualizer', emoji: '⚡' },
   { path: '/algo-backtester', label: 'Strategy Backtester', emoji: '🤖' },
   { path: '/life-path', label: 'Life Path Simulator', emoji: '🧭' },
+  { path: '/retirement-accounts', label: '401(k) vs Roth vs IRA', emoji: '🏦' },
 ];
 
 function Conclusion({ totalCorrect, totalAnswered }) {

@@ -39,6 +39,8 @@ const StockSimulation = ({ session }) => {
       withdrawalAmount: 500,
       taxTreatment: 'none',
       taxRate: 15,
+      inflationRatePct: 0,
+      rebalanceThresholdPct: 5,
     };
   });
   const [selectedCategories, setSelectedCategories] = useState(() => {
@@ -346,6 +348,8 @@ const StockSimulation = ({ session }) => {
           withdrawal_amount: config.useWithdrawal ? config.withdrawalAmount : 0,
           tax_treatment: config.taxTreatment || 'none',
           tax_rate: config.taxTreatment !== 'none' ? config.taxRate : 0,
+          inflation_rate_pct: config.inflationRatePct || 0,
+          rebalance_threshold_pct: config.rebalanceFrequency === 'threshold' ? config.rebalanceThresholdPct : 5,
         }),
       });
       const data = await res.json();
@@ -425,6 +429,8 @@ const StockSimulation = ({ session }) => {
       withdrawalAmount: 500,
       taxTreatment: 'none',
       taxRate: 15,
+      inflationRatePct: 0,
+      rebalanceThresholdPct: 5,
     });
     setSimulationResult(null);
     // Clear localStorage
@@ -977,11 +983,12 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
               <p className="text-navy-light text-sm mb-3">
                 If you pick multiple stocks, periodically sell winners and buy laggards back to equal weight.
               </p>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 mb-3">
                 {[
                   { label: 'Never', value: 'none' },
                   { label: 'Yearly', value: 'yearly' },
                   { label: 'Quarterly', value: 'quarterly' },
+                  { label: 'When Drift Exceeds...', value: 'threshold' },
                 ].map(opt => (
                   <button
                     key={opt.value}
@@ -996,6 +1003,27 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
                   </button>
                 ))}
               </div>
+
+              {config.rebalanceFrequency === 'threshold' && (
+                <div>
+                  <p className="text-navy-light text-sm mb-2">
+                    Rebalance only when any pick's actual weight drifts more than this far from its target — checked monthly, closer to how real robo-advisors work than a fixed calendar schedule.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {[3, 5, 10, 15].map(pct => (
+                      <button
+                        key={pct}
+                        onClick={() => setConfig({ ...config, rebalanceThresholdPct: pct })}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                          config.rebalanceThresholdPct === pct ? 'bg-navy text-white' : 'bg-cream-dark text-navy hover:bg-teal/20'
+                        }`}
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>
@@ -1137,6 +1165,31 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
                   ))}
                 </div>
               )}
+            </div>
+
+            <div>
+              <label className="block text-navy font-medium mb-2">Show Inflation-Adjusted Returns (optional)</label>
+              <p className="text-navy-light text-sm mb-3">
+                See what your final value is actually worth in today's purchasing power, not just the raw dollar number.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: 'Off', value: 0 },
+                  { label: '2% (low)', value: 2 },
+                  { label: '3% (historical avg)', value: 3 },
+                  { label: '5% (high)', value: 5 },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setConfig({ ...config, inflationRatePct: opt.value })}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      config.inflationRatePct === opt.value ? 'bg-teal text-white' : 'bg-cream-dark text-navy hover:bg-teal/20'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -1671,6 +1724,7 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
           benchmarkHistory={simulationResult.benchmark?.value_history}
           panicHistory={results.panicSell?.value_history}
           feeFreeHistory={simulationResult.fee_comparison?.value_history_without_fee}
+          realValueHistory={simulationResult.inflation_adjustment?.real_value_history}
         />
 
         {/* Stock Breakdown */}
@@ -1842,6 +1896,34 @@ Keep it under 280 words, plain language, no jargon, and stay strictly grounded i
                 This is real sequence-of-returns risk — the actual order and timing of market moves during withdrawal matters, not just the average return. The same average return with different timing could have lasted much longer.
               </p>
             )}
+          </div>
+        )}
+
+        {/* Inflation-Adjusted Returns */}
+        {simulationResult.inflation_adjustment && (
+          <div className="rounded-2xl p-8 bg-amber/10 border-2 border-amber/30">
+            <h4 className="font-display text-xl font-bold text-navy mb-1">📉 Real vs. Nominal Returns</h4>
+            <p className="text-navy-light text-sm mb-6">
+              Assuming {simulationResult.inflation_adjustment.annual_inflation_pct}% annual inflation, here's what your final balance is actually worth in today's purchasing power.
+            </p>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="p-4 bg-white rounded-xl text-center">
+                <p className="text-navy-light text-sm mb-1">Nominal (account statement)</p>
+                <p className="font-display text-2xl font-bold text-navy">
+                  ${simulationResult.inflation_adjustment.nominal_final_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+              <div className="p-4 bg-white rounded-xl text-center">
+                <p className="text-navy-light text-sm mb-1">Real (today's purchasing power)</p>
+                <p className="font-display text-2xl font-bold text-amber">
+                  ${simulationResult.inflation_adjustment.real_final_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+            </div>
+            <p className="text-navy text-sm mt-4 text-center">
+              Inflation quietly ate {simulationResult.inflation_adjustment.purchasing_power_lost_pct}% of the nominal gain's purchasing power over this period —
+              the number on your account statement isn't the whole story.
+            </p>
           </div>
         )}
 

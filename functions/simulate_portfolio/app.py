@@ -11,7 +11,7 @@ CORS_HEADERS = {
 }
 
 VALID_FREQUENCIES = {'none', 'monthly', 'yearly'}
-VALID_REBALANCE_FREQUENCIES = {'none', 'quarterly', 'yearly'}
+VALID_REBALANCE_FREQUENCIES = {'none', 'quarterly', 'yearly', 'threshold'}
 BENCHMARK_TICKER = 'SPY'
 
 
@@ -185,6 +185,7 @@ def simulate_portfolio_with_rebalancing(
     annual_fee_pct: float = 0.0,
     withdrawal_start_date: Optional[str] = None,
     withdrawal_amount: float = 0.0,
+    rebalance_threshold_pct: float = 5.0,
 ) -> Dict[str, Any]:
     """
     Simulate a multi-ticker portfolio that periodically rebalances back to
@@ -194,6 +195,12 @@ def simulate_portfolio_with_rebalancing(
     calendar so it can compare relative values at each rebalance date and
     sell winners / buy laggards back to target weight -- the same way a
     real rebalance works.
+
+    rebalance_frequency: 'quarterly' or 'yearly' rebalance on a fixed
+    calendar schedule regardless of how far allocations have drifted.
+    'threshold' instead checks monthly and only rebalances when any
+    ticker's actual weight has drifted more than rebalance_threshold_pct
+    away from its target -- closer to how real robo-advisors operate.
 
     weights: optional {symbol: fraction} where fractions sum to ~1.0. If not
     provided, falls back to equal weighting across all valid symbols.
@@ -266,7 +273,7 @@ def simulate_portfolio_with_rebalancing(
             withdrawal_start_ts = None
     withdrawal_per_ticker = {sym: withdrawal_amount * weight_fracs[sym] for sym in valid_symbols} if withdrawal_start_ts is not None else {sym: 0.0 for sym in valid_symbols}
 
-    rebalance_enabled = rebalance_frequency in ('quarterly', 'yearly')
+    rebalance_enabled = rebalance_frequency in ('quarterly', 'yearly', 'threshold')
     rebalance_events: List[str] = []
 
     last_contribution_period = (first_date.year, first_date.month)
@@ -342,20 +349,42 @@ def simulate_portfolio_with_rebalancing(
                         share_events[sym].append((d, shares[sym]))
 
         # Rebalancing back to each ticker's target weight (equal by default,
-        # custom if weights were provided)
+        # custom if weights were provided). Two modes: calendar-based
+        # (quarterly/yearly, always rebalances on the period boundary
+        # regardless of drift) or threshold-based (checks monthly, only
+        # rebalances if actual weight has drifted too far from target).
         if rebalance_enabled:
-            current_rebalance_period = (
-                (d.year, (d.month - 1) // 3) if rebalance_frequency == 'quarterly' else (d.year,)
-            )
-            if current_rebalance_period != last_rebalance_period:
-                prices_today = {sym: price_asof(sym, d) for sym in valid_symbols}
-                if all(p and p > 0 for p in prices_today.values()):
-                    total_value = sum(shares[sym] * prices_today[sym] for sym in valid_symbols)
-                    for sym in valid_symbols:
-                        target_value = total_value * weight_fracs[sym]
-                        shares[sym] = target_value / prices_today[sym]
-                        share_events[sym].append((d, shares[sym]))
-                    rebalance_events.append(d.date().isoformat())
+            if rebalance_frequency == 'threshold':
+                period_changed = current_period != last_rebalance_period
+                if period_changed:
+                    prices_today = {sym: price_asof(sym, d) for sym in valid_symbols}
+                    if all(p and p > 0 for p in prices_today.values()):
+                        total_value = sum(shares[sym] * prices_today[sym] for sym in valid_symbols)
+                        if total_value > 0:
+                            max_drift_pct = max(
+                                abs((shares[sym] * prices_today[sym] / total_value) - weight_fracs[sym]) * 100
+                                for sym in valid_symbols
+                            )
+                            if max_drift_pct > rebalance_threshold_pct:
+                                for sym in valid_symbols:
+                                    target_value = total_value * weight_fracs[sym]
+                                    shares[sym] = target_value / prices_today[sym]
+                                    share_events[sym].append((d, shares[sym]))
+                                rebalance_events.append(d.date().isoformat())
+                    last_rebalance_period = current_period
+            else:
+                current_rebalance_period = (
+                    (d.year, (d.month - 1) // 3) if rebalance_frequency == 'quarterly' else (d.year,)
+                )
+                if current_rebalance_period != last_rebalance_period:
+                    prices_today = {sym: price_asof(sym, d) for sym in valid_symbols}
+                    if all(p and p > 0 for p in prices_today.values()):
+                        total_value = sum(shares[sym] * prices_today[sym] for sym in valid_symbols)
+                        for sym in valid_symbols:
+                            target_value = total_value * weight_fracs[sym]
+                            shares[sym] = target_value / prices_today[sym]
+                            share_events[sym].append((d, shares[sym]))
+                        rebalance_events.append(d.date().isoformat())
                 last_rebalance_period = current_rebalance_period
 
     # Final sale at each ticker's own last close
@@ -525,6 +554,44 @@ def find_depletion_date(value_history: List[Dict[str, Any]], threshold: float = 
     return None
 
 
+def compute_inflation_adjustment(
+    value_history: List[Dict[str, Any]],
+    annual_inflation_pct: float,
+) -> Optional[Dict[str, Any]]:
+    """
+    Deflates a nominal value_history into "today's dollars" using a constant
+    assumed annual inflation rate, compounded from the series' start date.
+    This is the real-vs-nominal-returns distinction: the nominal final value
+    is what the account statement would show; the real (inflation-adjusted)
+    value is what that money can actually buy, in today's purchasing power.
+    """
+    if not value_history or annual_inflation_pct <= 0:
+        return None
+
+    start_date = pd.to_datetime(value_history[0]['date'])
+    monthly_rate = annual_inflation_pct / 100.0
+
+    real_history: List[Dict[str, Any]] = []
+    for point in value_history:
+        point_date = pd.to_datetime(point['date'])
+        years_elapsed = (point_date - start_date).days / 365.25
+        deflator = (1 + monthly_rate) ** years_elapsed
+        real_value = point['value'] / deflator if deflator > 0 else point['value']
+        real_history.append({'date': point['date'], 'value': round(real_value, 2)})
+
+    nominal_final = value_history[-1]['value']
+    real_final = real_history[-1]['value']
+    purchasing_power_lost_pct = ((nominal_final - real_final) / nominal_final) * 100 if nominal_final > 0 else 0
+
+    return {
+        'annual_inflation_pct': annual_inflation_pct,
+        'nominal_final_value': round(nominal_final, 2),
+        'real_final_value': round(real_final, 2),
+        'purchasing_power_lost_pct': round(purchasing_power_lost_pct, 2),
+        'real_value_history': real_history,
+    }
+
+
 def compute_panic_sell(
     ticker_series: Dict[str, Dict[str, Any]],
     value_history: List[Dict[str, Any]],
@@ -650,12 +717,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         contribution_frequency: str = (body.get('contribution_frequency') or 'none').lower()
         panic_sell_date: Optional[str] = body.get('panic_sell_date') or None
         rebalance_frequency: str = (body.get('rebalance_frequency') or 'none').lower()
+        rebalance_threshold_pct: float = float(body.get('rebalance_threshold_pct') or 5.0)
         custom_start_date: Optional[str] = body.get('start_date') or None
         custom_end_date: Optional[str] = body.get('end_date') or None
         raw_weights: Optional[Dict[str, Any]] = body.get('weights') or None
         annual_fee_pct: float = float(body.get('annual_fee_pct') or 0)
         tax_treatment: str = (body.get('tax_treatment') or 'none').lower()
         tax_rate: float = float(body.get('tax_rate') or 0)
+        inflation_rate_pct: float = float(body.get('inflation_rate_pct') or 0)
         withdrawal_start_date: Optional[str] = body.get('withdrawal_start_date') or None
         withdrawal_amount: float = float(body.get('withdrawal_amount') or 0)
 
@@ -713,6 +782,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'body': json.dumps({'error': 'tax_rate must be between 0 and 50'})
             }
 
+        if inflation_rate_pct < 0 or inflation_rate_pct > 20:
+            return {
+                'statusCode': 400,
+                'headers': CORS_HEADERS,
+                'body': json.dumps({'error': 'inflation_rate_pct must be between 0 and 20'})
+            }
+
         if withdrawal_amount < 0:
             return {
                 'statusCode': 400,
@@ -732,6 +808,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'statusCode': 400,
                 'headers': CORS_HEADERS,
                 'body': json.dumps({'error': f"rebalance_frequency must be one of {sorted(VALID_REBALANCE_FREQUENCIES)}"})
+            }
+
+        if rebalance_threshold_pct <= 0 or rebalance_threshold_pct > 50:
+            return {
+                'statusCode': 400,
+                'headers': CORS_HEADERS,
+                'body': json.dumps({'error': 'rebalance_threshold_pct must be between 0 and 50'})
             }
 
         recurring_enabled = contribution_amount > 0 and contribution_frequency != 'none'
@@ -819,6 +902,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     contribution_amount, contribution_frequency, rebalance_frequency,
                     weights=weight_fracs, annual_fee_pct=fee_pct,
                     withdrawal_start_date=withdrawal_start_date, withdrawal_amount=withdrawal_amount,
+                    rebalance_threshold_pct=rebalance_threshold_pct,
                 )
                 if 'error' in rb:
                     return {'error': rb['error']}
@@ -890,6 +974,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # before end_date? Real sequence-of-returns risk means this can
         # happen even with a "reasonable-sounding" withdrawal amount.
         depletion_date = find_depletion_date(value_history) if withdrawal_amount > 0 else None
+        inflation_adjustment = compute_inflation_adjustment(value_history, inflation_rate_pct)
 
         overall_roi = (total_final_value - total_contributed) / total_contributed if total_contributed > 0 else 0.0
         risk_metrics = compute_risk_metrics(value_history, total_contributed, total_final_value)
@@ -962,6 +1047,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'contribution_amount': round(contribution_amount, 2),
             'contribution_frequency': contribution_frequency,
             'rebalance_frequency': rebalance_frequency,
+            'rebalance_threshold_pct': rebalance_threshold_pct if rebalance_frequency == 'threshold' else None,
             'rebalance_events': rebalance_events,
             'weights': {t: round(weight_fracs[t] * 100, 2) for t in clean_tickers},
             'ticker_breakdown': ticker_breakdown,
@@ -971,6 +1057,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'annual_fee_pct': annual_fee_pct,
             'fee_comparison': fee_comparison,
             'tax_estimate': tax_estimate,
+            'inflation_adjustment': inflation_adjustment,
             'withdrawal_start_date': withdrawal_start_date,
             'withdrawal_amount': withdrawal_amount,
             'total_withdrawn': round(total_withdrawn, 2),

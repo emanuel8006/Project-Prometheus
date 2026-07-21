@@ -21,6 +21,7 @@ import MonteCarlo from './pages/MonteCarlo';
 import OptionsPayoff from './pages/OptionsPayoff';
 import AlgoBacktester from './pages/AlgoBacktester';
 import LifePathSimulator from './pages/LifePathSimulator';
+import RetirementAccountComparison from './pages/RetirementAccountComparison';
 import Conclusion from './pages/Conclusion';
 import SignInModal from './pages/SignInModal';
 import SignUpModal from './pages/SignUpModal';
@@ -256,6 +257,7 @@ function App() {
         <Route path="/options-payoff" element={<ErrorBoundary title="Something went wrong with the Options Payoff Visualizer"><OptionsPayoff /></ErrorBoundary>} />
         <Route path="/algo-backtester" element={<ErrorBoundary title="Something went wrong with the Strategy Backtester"><AlgoBacktester /></ErrorBoundary>} />
         <Route path="/life-path" element={<ErrorBoundary title="Something went wrong with the Life Path Simulator"><LifePathSimulator /></ErrorBoundary>} />
+        <Route path="/retirement-accounts" element={<ErrorBoundary title="Something went wrong with the Retirement Account Comparison"><RetirementAccountComparison /></ErrorBoundary>} />
         <Route path="/conclusion" element={
           <ErrorBoundary title="Something went wrong on this page">
             <Conclusion 

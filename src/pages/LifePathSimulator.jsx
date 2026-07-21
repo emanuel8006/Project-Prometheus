@@ -363,8 +363,8 @@ function LifePathSimulator() {
           <PageNavigation
             prevPath="/algo-backtester"
             prevLabel="Backtester"
-            nextPath="/conclusion"
-            nextLabel="See Conclusion"
+            nextPath="/retirement-accounts"
+            nextLabel="Retirement Accounts"
           />
         </div>
       </div>

@@ -15,6 +15,7 @@ const modules = [
   { path: '/options-payoff', name: 'Options Payoff', short: '⚡', questions: 0, prefix: null },
   { path: '/algo-backtester', name: 'Backtester', short: '🤖', questions: 0, prefix: null },
   { path: '/life-path', name: 'Life Path', short: '🧭', questions: 0, prefix: null },
+  { path: '/retirement-accounts', name: 'Retirement Accounts', short: '🏦', questions: 0, prefix: null },
   { path: '/conclusion', name: 'Conclusion', short: '✓', questions: 0, prefix: null },
 ];
 

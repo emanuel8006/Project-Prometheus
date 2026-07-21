@@ -330,6 +330,28 @@ class TestSimulatePortfolioWithRebalancing(unittest.TestCase):
         ratio = final_a_value / final_b_value
         self.assertLess(abs(ratio - 1.0), 0.5, "Rebalancing should keep final values reasonably close to equal weight")
 
+    def test_threshold_rebalancing_triggers_only_past_the_drift_limit(self):
+        # A grows sharply in the first month (well past a 5% drift from equal
+        # weight), then stays flat. Threshold mode should catch and correct
+        # that drift; a huge threshold (allowing basically anything) should
+        # never trigger a rebalance at all.
+        dates = pd.to_datetime(['2020-01-01', '2020-02-01', '2020-03-01', '2020-04-01'])
+        history_a = make_history(dates, [100, 100, 100, 100], [100, 140, 140, 140])
+        history_b = make_history(dates, [100, 100, 100, 100], [100, 100, 100, 100])
+
+        with patch.object(app.yf, 'Ticker', FakeTicker({'A': history_a, 'B': history_b})):
+            tight = app.simulate_portfolio_with_rebalancing(
+                ['A', 'B'], '2020-01-01', '2020-04-01', 1000, 0, 'none', 'threshold',
+                rebalance_threshold_pct=5.0,
+            )
+            loose = app.simulate_portfolio_with_rebalancing(
+                ['A', 'B'], '2020-01-01', '2020-04-01', 1000, 0, 'none', 'threshold',
+                rebalance_threshold_pct=45.0,
+            )
+
+        self.assertGreater(len(tight['rebalance_events']), 0, "A 5% threshold should catch a large drift")
+        self.assertEqual(len(loose['rebalance_events']), 0, "A 45% threshold should never trigger on this drift")
+
 
 if __name__ == '__main__':
     unittest.main()
